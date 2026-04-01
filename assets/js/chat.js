@@ -3,45 +3,56 @@
 (function() {
   const style = document.createElement('style');
   style.textContent = `
+    .chat-msg-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    .chat-msg-row--me { flex-direction: row-reverse; }
+    .chat-msg-row--them { flex-direction: row; }
+    .chat-msg-row__side {
+      display: flex;
+      gap: 2px;
+      opacity: 0;
+      transition: opacity 0.15s;
+      flex-shrink: 0;
+      padding-bottom: 2px;
+    }
+    .chat-msg-row:hover .chat-msg-row__side { opacity: 1; }
     .chat-msg {
       max-width: 70%;
-      padding: 10px 14px;
-      margin-bottom: 8px;
+      padding: 8px 12px;
       font-size: 0.85rem;
       line-height: 1.4;
       word-break: break-word;
     }
     .chat-msg--me {
-      margin-left: auto;
       background: #1a1a1a;
       color: var(--color-text, #fff);
       border: var(--border, 1px solid #fff);
     }
     .chat-msg--them {
-      margin-right: auto;
       background: var(--color-surface, #0a0a0a);
       color: var(--color-text, #fff);
       border: var(--border-muted, 1px solid #333);
     }
     [data-theme="light"] .chat-msg--me { background: #e8e8e8; color: #000; border-color: #000; }
     [data-theme="light"] .chat-msg--them { background: #f5f5f5; color: #000; }
-    .chat-msg__time { font-size: 0.65rem; opacity: 0.6; margin-top: 4px; }
-    .chat-msg--me .chat-msg__time { text-align: right; }
-    .chat-msg--them .chat-msg__time { text-align: left; }
-    .chat-msg__actions { display: none; gap: 6px; margin-top: 4px; justify-content: flex-end; }
-    .chat-msg--me:hover .chat-msg__actions { display: flex; }
+    .chat-msg__footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 3px;
+      gap: 8px;
+    }
+    .chat-msg__time { font-size: 0.6rem; opacity: 0.5; white-space: nowrap; }
     .chat-msg__action-btn {
       background: none; border: none; color: var(--color-text-muted, #888);
-      font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em;
-      cursor: pointer; padding: 2px 4px;
+      font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.06em;
+      cursor: pointer; padding: 0 2px;
     }
     .chat-msg__action-btn:hover { color: var(--color-text, #fff); }
-    .chat-msg__reply-btn {
-      background: none; border: none; color: var(--color-text-muted, #888);
-      font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em;
-      cursor: pointer; padding: 2px 4px;
-    }
-    .chat-msg__reply-btn:hover { color: var(--color-text, #fff); }
     .chat-edit-input {
       width: 100%; background: var(--color-input-bg, #111);
       border: var(--border-muted, 1px solid #333); color: var(--color-text, #fff);
@@ -800,6 +811,7 @@ const Chat = {
 
       const isMine = m._isMine || (this._myUserId && m.sender_id === this._myUserId);
       const cls = isMine ? 'chat-msg chat-msg--me' : 'chat-msg chat-msg--them';
+      const rowCls = isMine ? 'chat-msg-row chat-msg-row--me' : 'chat-msg-row chat-msg-row--them';
       const text = m._plaintext || '[Unable to decrypt]';
 
       // Reply quote
@@ -826,23 +838,27 @@ const Chat = {
         } catch (e) {}
       }
 
-      // Actions
-      const replyBtn = `<button class="chat-msg__reply-btn" onclick="Chat.setReply('${this._esc(m.id)}')">reply</button>`;
-      const myActions = isMine ? `<div class="chat-msg__actions">
-        ${replyBtn}
-        <button class="chat-msg__action-btn" onclick="Chat.startEdit('${this._esc(m.id)}')">edit</button>
-        <button class="chat-msg__action-btn" onclick="Chat.unsendMessage('${this._esc(m.id)}')">unsend</button>
-      </div>` : `<div class="chat-msg__actions" style="display:none;">${replyBtn}</div>`;
+      // Footer: time on left, actions on right - all on one line
+      const replyBtn = `<button class="chat-msg__action-btn" onclick="Chat.setReply('${this._esc(m.id)}')">reply</button>`;
+      let actionBtns = replyBtn;
+      if (isMine) {
+        actionBtns += `<button class="chat-msg__action-btn" onclick="Chat.startEdit('${this._esc(m.id)}')">edit</button>`;
+        actionBtns += `<button class="chat-msg__action-btn" onclick="Chat.unsendMessage('${this._esc(m.id)}')">unsend</button>`;
+      }
 
-      // Show reply button on hover for their messages too
-      const hoverReply = !isMine ? ` onmouseenter="this.querySelector('.chat-msg__actions').style.display='flex'" onmouseleave="this.querySelector('.chat-msg__actions').style.display='none'"` : '';
+      // Side actions (appear to left/right of bubble on hover)
+      const sideActions = `<div class="chat-msg-row__side">${actionBtns}</div>`;
 
-      html += `<div class="${cls}" data-msg-id="${this._esc(m.id)}"${hoverReply}>
-        ${quoteHtml}
-        <div class="chat-msg__text">${text !== '[attachment]' ? this._esc(text) : ''}</div>
-        ${attachHtml}
-        <div class="chat-msg__time">${this._formatTimeShort(m.created_at)}</div>
-        ${myActions}
+      const footer = `<div class="chat-msg__footer"><span class="chat-msg__time">${this._formatTimeShort(m.created_at)}</span></div>`;
+
+      html += `<div class="${rowCls}" data-msg-id="${this._esc(m.id)}">
+        <div class="${cls}">
+          ${quoteHtml}
+          <div class="chat-msg__text">${text !== '[attachment]' ? this._esc(text) : ''}</div>
+          ${attachHtml}
+          ${footer}
+        </div>
+        ${sideActions}
       </div>`;
     }
 
@@ -899,11 +915,13 @@ const Chat = {
     const msg = msgs ? msgs.find(m => m.id === msgId) : null;
     if (!msg) return;
     this._editingMsgId = msgId;
-    const el = document.querySelector(`[data-msg-id="${msgId}"]`);
+    const row = document.querySelector(`[data-msg-id="${msgId}"]`);
+    if (!row) return;
+    const el = row.querySelector('.chat-msg');
     if (!el) return;
     const textEl = el.querySelector('.chat-msg__text');
-    const actionsEl = el.querySelector('.chat-msg__actions');
-    if (actionsEl) actionsEl.style.display = 'none';
+    const sideEl = row.querySelector('.chat-msg-row__side');
+    if (sideEl) sideEl.style.display = 'none';
     const currentText = msg._plaintext || '';
     textEl.innerHTML = `<input type="text" class="chat-edit-input" id="chat-edit-input" value="${this._esc(currentText).replace(/"/g, '&quot;')}" autocomplete="off">
       <div class="chat-edit-btns">

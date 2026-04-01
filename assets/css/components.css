@@ -781,18 +781,17 @@ textarea.input {
   min-height: 0;
 }
 .chat-messages-wrap {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
-  position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
 }
 .chat-messages-wrap #chat-messages {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow-y: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: scroll;
   overflow-x: hidden;
   padding: 16px;
   scrollbar-width: thin;

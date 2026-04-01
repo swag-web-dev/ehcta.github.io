@@ -509,6 +509,9 @@ const Chat = {
   },
 
   // ── POLLING ──
+  _convPollCount: 0,
+  _lastConvJson: '',
+
   _startPolling() {
     this._stopPolling();
     this._pollTimer = setInterval(() => {
@@ -517,8 +520,25 @@ const Chat = {
         this._checkForChanges(this._activeConvId);
         this._checkTyping();
       }
-      this.loadConversations();
+      // Only refresh conversation list every 5s (every 10th tick)
+      this._convPollCount++;
+      if (this._convPollCount >= 10) {
+        this._convPollCount = 0;
+        this._checkConversations();
+      }
     }, 500);
+  },
+
+  async _checkConversations() {
+    try {
+      const convs = await API.get('api/chat/conversations');
+      const json = JSON.stringify(convs.map(c => c.id + c.unread_count + c.last_message_at + c.status + c.other_last_seen));
+      if (json !== this._lastConvJson) {
+        this._lastConvJson = json;
+        this._conversations = convs || [];
+        this.renderConversations();
+      }
+    } catch (e) {}
   },
 
   async _checkForChanges(convId) {
@@ -532,6 +552,8 @@ const Chat = {
       if (changed) {
         await this.loadMessages(convId);
         this._markRead(convId);
+        // Also refresh conversation list when messages change
+        this._checkConversations();
       }
     } catch (e) {}
   },

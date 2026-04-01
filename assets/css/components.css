@@ -770,6 +770,7 @@ textarea.input {
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  min-height: 0;
 }
 
 @media (max-width: 700px) {

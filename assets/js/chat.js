@@ -157,6 +157,22 @@
       display: none; gap: 4px; margin-top: 6px;
     }
     .chat-conv-item:hover .chat-conv-item__actions { display: flex; }
+    .chat-lightbox {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.92); z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+      cursor: zoom-out;
+    }
+    .chat-lightbox img {
+      max-width: 92vw; max-height: 92vh; object-fit: contain;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .chat-lightbox__close {
+      position: absolute; top: 16px; right: 24px;
+      background: none; border: none; color: #fff; font-size: 2rem;
+      cursor: pointer; z-index: 10000; line-height: 1;
+    }
+    .chat-lightbox__close:hover { color: #e74c3c; }
   `;
   document.head.appendChild(style);
 })();
@@ -266,6 +282,9 @@ const Chat = {
       if (this._emojiOpen && !e.target.closest('#chat-emoji-picker') && !e.target.closest('#chat-emoji-btn')) {
         this._closeEmoji();
       }
+      if (this._pinPanelOpen && !e.target.closest('#chat-pin-panel') && !e.target.closest('#chat-pin-toggle')) {
+        this.togglePinPanel();
+      }
     });
   },
 
@@ -351,6 +370,8 @@ const Chat = {
         for (const msg of msgs) {
           try { msg._plaintext = await this._decryptMyMessage(msg, convId); }
           catch (e) { msg._plaintext = '[Decryption failed]'; }
+          try { msg._decryptedAttachment = await this._decryptAttachment(msg); }
+          catch (e) { msg._decryptedAttachment = ''; }
           msg._isMine = this._myUserId && msg.sender_id === this._myUserId;
           newMessages.push(msg);
         }
@@ -365,6 +386,25 @@ const Chat = {
     catch (e1) {
       try { return await Crypto.decryptChatMessage(msg.ciphertext_user2); }
       catch (e2) { return '[Unable to decrypt]'; }
+    }
+  },
+
+  async _decryptAttachment(msg) {
+    if (!msg.attachment) return '';
+    try {
+      const parsed = JSON.parse(msg.attachment);
+      // Encrypted attachment format: { att_ct1, att_ct2 }
+      if (parsed.att_ct1 && parsed.att_ct2) {
+        try { return await Crypto.decryptChatMessage(parsed.att_ct1); }
+        catch (e1) {
+          try { return await Crypto.decryptChatMessage(parsed.att_ct2); }
+          catch (e2) { return ''; }
+        }
+      }
+      // Legacy unencrypted attachment (plain array), return as-is
+      return msg.attachment;
+    } catch (e) {
+      return msg.attachment;
     }
   },
 
@@ -417,7 +457,7 @@ const Chat = {
       id: tempId, conversation_id: this._activeConvId,
       sender_id: this._myUserId || '__me__', ciphertext_user1: '', ciphertext_user2: '',
       created_at: new Date().toISOString(), _plaintext: msgContent, _isMine: true,
-      reply_to: replyTo ? replyTo.id : '', attachment: attachment,
+      reply_to: replyTo ? replyTo.id : '', attachment: '', _decryptedAttachment: attachment,
     });
     this.renderMessages(this._activeConvId);
 
@@ -429,9 +469,17 @@ const Chat = {
       const ciphertext_user1 = await Crypto.encryptForChat(msgContent, user1PubKey);
       const ciphertext_user2 = await Crypto.encryptForChat(msgContent, user2PubKey);
 
+      // Encrypt attachment if present
+      let encAttachment = '';
+      if (attachment) {
+        const att_ct1 = await Crypto.encryptForChat(attachment, user1PubKey);
+        const att_ct2 = await Crypto.encryptForChat(attachment, user2PubKey);
+        encAttachment = JSON.stringify({ att_ct1, att_ct2 });
+      }
+
       const result = await API.post('api/chat/messages/send', {
         conversation_id: this._activeConvId, ciphertext_user1, ciphertext_user2,
-        reply_to: replyTo ? replyTo.id : '', attachment: attachment,
+        reply_to: replyTo ? replyTo.id : '', attachment: encAttachment,
       });
 
       // Replace temp message with real one
@@ -895,12 +943,13 @@ const Chat = {
 
       // Attachment
       let attachHtml = '';
-      if (m.attachment) {
+      const attachData = m._decryptedAttachment || m.attachment || '';
+      if (attachData) {
         try {
-          const files = JSON.parse(m.attachment);
+          const files = JSON.parse(attachData);
           for (const f of files) {
             if (f.type && f.type.startsWith('image/')) {
-              attachHtml += `<div class="chat-msg__attachment"><img src="${this._esc(f.data)}" alt="${this._esc(f.name)}" onclick="window.open(this.src)"></div>`;
+              attachHtml += `<div class="chat-msg__attachment"><img src="${this._esc(f.data)}" alt="${this._esc(f.name)}" onclick="Chat._openLightbox(this.src)"></div>`;
             } else {
               attachHtml += `<div class="chat-msg__attachment"><a href="${this._esc(f.data)}" download="${this._esc(f.name)}">${this._esc(f.name)} (${this._formatSize(f.size)})</a></div>`;
             }
@@ -984,9 +1033,14 @@ const Chat = {
     const msg = msgs.find(m => m.id === msgId);
     const isMine = msg && (msg._isMine || (this._myUserId && msg.sender_id === this._myUserId));
 
+    const hasAttach = msg && (msg._decryptedAttachment || msg.attachment);
+
     let menuHtml = '<div class="chat-msg__menu">';
     menuHtml += `<button class="chat-msg__menu-item" onclick="Chat.setReply('${this._esc(msgId)}');Chat._closeMenu()">Reply</button>`;
     menuHtml += `<button class="chat-msg__menu-item" onclick="Chat.pinMessage('${this._esc(msgId)}');Chat._closeMenu()">Pin</button>`;
+    if (hasAttach) {
+      menuHtml += `<button class="chat-msg__menu-item" onclick="Chat._downloadAttachment('${this._esc(msgId)}');Chat._closeMenu()">Download</button>`;
+    }
     if (isMine) {
       menuHtml += `<button class="chat-msg__menu-item" onclick="Chat.startEdit('${this._esc(msgId)}');Chat._closeMenu()">Edit</button>`;
       menuHtml += `<button class="chat-msg__menu-item chat-msg__menu-item--danger" onclick="Chat.unsendMessage('${this._esc(msgId)}');Chat._closeMenu()">Unsend</button>`;
@@ -1114,6 +1168,42 @@ const Chat = {
       this._editingMsgId = null;
       this.renderMessages(this._activeConvId);
     } catch (e) { Toast.show(e.message || 'Failed to edit', true); }
+  },
+
+  // ── LIGHTBOX ──
+  _openLightbox(src) {
+    const overlay = document.createElement('div');
+    overlay.className = 'chat-lightbox';
+    overlay.innerHTML = `<button class="chat-lightbox__close" title="Close">&times;</button><img src="${src}">`;
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay || e.target.classList.contains('chat-lightbox__close')) {
+        overlay.remove();
+      }
+    });
+    document.addEventListener('keydown', function handler(e) {
+      if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', handler); }
+    });
+    document.body.appendChild(overlay);
+  },
+
+  // ── DOWNLOAD ATTACHMENT ──
+  _downloadAttachment(msgId) {
+    const msgs = this._messages[this._activeConvId] || [];
+    const msg = msgs.find(m => m.id === msgId);
+    if (!msg) return;
+    const attachData = msg._decryptedAttachment || msg.attachment || '';
+    if (!attachData) return;
+    try {
+      const files = JSON.parse(attachData);
+      for (const f of files) {
+        const a = document.createElement('a');
+        a.href = f.data;
+        a.download = f.name || 'download';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (e) { Toast.show('Failed to download attachment', true); }
   },
 
   destroy() {

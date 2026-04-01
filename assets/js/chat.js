@@ -40,16 +40,14 @@
     }
     .chat-msg__time { font-size: 0.6rem; opacity: 0.5; white-space: nowrap; }
     .chat-msg__dots {
-      position: absolute;
-      top: 2px;
-      opacity: 0;
-      transition: opacity 0.15s;
       background: none; border: none;
       color: var(--color-text-muted, #888);
-      font-size: 1rem; cursor: pointer; padding: 0 4px; line-height: 1;
+      font-size: 0.9rem; cursor: pointer; padding: 2px 4px; line-height: 1;
+      opacity: 0;
+      transition: opacity 0.15s;
+      align-self: center;
+      flex-shrink: 0;
     }
-    .chat-msg-row--me .chat-msg__dots { left: -20px; }
-    .chat-msg-row--them .chat-msg__dots { right: -20px; }
     .chat-msg-row:hover .chat-msg__dots { opacity: 1; }
     .chat-msg__dots:hover { color: var(--color-text, #fff); }
     .chat-msg__menu {
@@ -60,8 +58,8 @@
       min-width: 120px;
       padding: 4px 0;
     }
-    .chat-msg-row--me .chat-msg__menu { left: 0; top: 0; }
-    .chat-msg-row--them .chat-msg__menu { right: 0; top: 0; }
+    .chat-msg-row--me .chat-msg__menu { right: 0; top: 100%; margin-top: 2px; }
+    .chat-msg-row--them .chat-msg__menu { left: 0; top: 100%; margin-top: 2px; }
     .chat-msg__menu-item {
       display: block; width: 100%;
       background: none; border: none; color: var(--color-text, #fff);
@@ -284,15 +282,35 @@ const Chat = {
     const emojiBtn = document.getElementById('chat-emoji-btn');
     if (emojiBtn) emojiBtn.addEventListener('click', () => this._toggleEmoji());
 
-    // Scroll-to-bottom detection
+    // Scroll chat messages with mouse wheel
     const msgContainer = document.getElementById('chat-messages');
+    const msgWrap = msgContainer ? msgContainer.parentElement : null;
+    if (msgWrap) {
+      msgWrap.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        msgContainer.scrollTop += e.deltaY;
+      }, { passive: false });
+    }
     if (msgContainer) {
+      msgContainer.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        msgContainer.scrollTop += e.deltaY;
+      }, { passive: false });
       msgContainer.addEventListener('scroll', () => {
         const btn = document.getElementById('chat-scroll-btn');
         if (!btn) return;
         const atBottom = msgContainer.scrollHeight - msgContainer.scrollTop - msgContainer.clientHeight < 100;
         btn.style.display = atBottom ? 'none' : 'block';
       });
+    }
+
+    // Scroll conversation list with mouse wheel
+    const convList = document.getElementById('chat-conv-list');
+    if (convList) {
+      convList.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        convList.scrollTop += e.deltaY;
+      }, { passive: false });
     }
 
     // Close menus on outside click
@@ -1054,7 +1072,8 @@ const Chat = {
     const msg = msgs.find(m => m.id === msgId);
     const isMine = msg && (msg._isMine || (this._myUserId && msg.sender_id === this._myUserId));
 
-    const hasAttach = msg && (msg._decryptedAttachment || msg.attachment);
+    const attachStr = msg ? (msg._decryptedAttachment || msg.attachment || '') : '';
+    const hasAttach = attachStr.length > 2; // not empty or '[]'
 
     let menuHtml = '<div class="chat-msg__menu">';
     menuHtml += `<button class="chat-msg__menu-item" onclick="Chat.setReply('${this._esc(msgId)}');Chat._closeMenu()">Reply</button>`;
@@ -1213,29 +1232,30 @@ const Chat = {
 
     let zoomed = false;
     let dragging = false;
+    let didDrag = false;
     let startX = 0, startY = 0, scrollX = 0, scrollY = 0;
 
+    const closeLightbox = () => {
+      overlay.remove();
+      document.removeEventListener('keydown', keyHandler);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
     // Close on overlay background or close button
-    const closeLightbox = () => { overlay.remove(); document.removeEventListener('keydown', keyHandler); };
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay || e.target === closeBtn) closeLightbox();
     });
-    closeBtn.addEventListener('click', closeLightbox);
+    closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeLightbox(); });
 
-    // Click image to zoom in/out
+    // Click image to zoom in, double-click to zoom out
     img.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (zoomed) {
-        // Zoom out
-        zoomed = false;
-        wrap.classList.remove('chat-lightbox__img-wrap--zoomed');
-        img.style.left = '';
-        img.style.top = '';
-      } else {
+      if (didDrag) { didDrag = false; return; } // ignore click after drag
+      if (!zoomed) {
         // Zoom in
         zoomed = true;
         wrap.classList.add('chat-lightbox__img-wrap--zoomed');
-        // Center the image
         const natW = img.naturalWidth || img.width;
         const natH = img.naturalHeight || img.height;
         img.style.width = natW + 'px';
@@ -1245,11 +1265,24 @@ const Chat = {
       }
     });
 
+    img.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      if (zoomed) {
+        zoomed = false;
+        wrap.classList.remove('chat-lightbox__img-wrap--zoomed');
+        img.style.left = '';
+        img.style.top = '';
+        img.style.width = '';
+        img.style.height = '';
+      }
+    });
+
     // Drag to pan when zoomed
     wrap.addEventListener('mousedown', (e) => {
       if (!zoomed || e.target === closeBtn) return;
       e.preventDefault();
       dragging = true;
+      didDrag = false;
       wrap.classList.add('dragging');
       startX = e.clientX;
       startY = e.clientY;
@@ -1257,20 +1290,23 @@ const Chat = {
       scrollY = parseInt(img.style.top || 0);
     });
 
-    document.addEventListener('mousemove', (e) => {
+    function onMouseMove(e) {
       if (!dragging) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag = true;
       img.style.left = (scrollX + dx) + 'px';
       img.style.top = (scrollY + dy) + 'px';
-    });
+    }
 
-    document.addEventListener('mouseup', () => {
+    function onMouseUp() {
       dragging = false;
       wrap.classList.remove('dragging');
-    });
+    }
 
-    // Escape to close
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+
     function keyHandler(e) {
       if (e.key === 'Escape') closeLightbox();
     }

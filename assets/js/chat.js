@@ -405,7 +405,7 @@ const Chat = {
         this._checkForChanges(this._activeConvId);
       }
       this.loadConversations();
-    }, 5000);
+    }, 1500);
   },
 
   async _checkForChanges(convId) {

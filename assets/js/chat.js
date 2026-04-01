@@ -11,6 +11,16 @@
     }
     .chat-msg-row--me { flex-direction: row-reverse; }
     .chat-msg-row--them { flex-direction: row; }
+    .chat-msg-row--has-attach {
+      flex-direction: column !important;
+      align-items: flex-end;
+    }
+    .chat-msg-row--has-attach.chat-msg-row--them {
+      align-items: flex-start;
+    }
+    .chat-msg-row--has-attach .chat-msg-row__side {
+      padding: 0;
+    }
     .chat-msg-row__side {
       display: flex;
       gap: 2px;
@@ -342,7 +352,10 @@ const Chat = {
   },
 
   // ── SEND MESSAGE ──
+  _sending: false,
+
   async sendMessage() {
+    if (this._sending) return;
     const input = document.getElementById('chat-message-input');
     if (!input) return;
     const text = input.value.trim();
@@ -354,47 +367,71 @@ const Chat = {
       Toast.show('Chat keys not ready', true); return;
     }
 
+    this._sending = true;
+
+    // Capture and clear input immediately
+    const msgContent = text || (hasFiles ? '[attachment]' : '');
+    const files = this._pendingFiles.slice();
+    const replyTo = this._replyTo;
+    input.value = '';
+    this._pendingFiles = [];
+    this._updateAttachPreview();
+    this.cancelReply();
+
+    // Build attachment data
+    let attachment = '';
+    if (files.length > 0) {
+      attachment = JSON.stringify(files.map(f => ({ name: f.name, type: f.type, size: f.size, data: f.dataUrl })));
+    }
+
+    // Show optimistic message immediately
+    const tempId = '_tmp_' + Date.now();
+    if (!this._messages[this._activeConvId]) this._messages[this._activeConvId] = [];
+    this._messages[this._activeConvId].push({
+      id: tempId, conversation_id: this._activeConvId,
+      sender_id: this._myUserId || '__me__', ciphertext_user1: '', ciphertext_user2: '',
+      created_at: new Date().toISOString(), _plaintext: msgContent, _isMine: true,
+      reply_to: replyTo ? replyTo.id : '', attachment: attachment,
+    });
+    this.renderMessages(this._activeConvId);
+
     try {
       const amUser1 = await this._amIUser1(meta.user1_id);
       const user1PubKey = amUser1 ? this._myPublicKey : meta.otherPublicKey;
       const user2PubKey = amUser1 ? meta.otherPublicKey : this._myPublicKey;
 
-      // Build attachment data
-      let attachment = '';
-      if (hasFiles) {
-        const fileData = [];
-        for (const f of this._pendingFiles) {
-          fileData.push({ name: f.name, type: f.type, size: f.size, data: f.dataUrl });
-        }
-        attachment = JSON.stringify(fileData);
-      }
-
-      const msgContent = text || (hasFiles ? '[attachment]' : '');
       const ciphertext_user1 = await Crypto.encryptForChat(msgContent, user1PubKey);
       const ciphertext_user2 = await Crypto.encryptForChat(msgContent, user2PubKey);
 
       const result = await API.post('api/chat/messages/send', {
         conversation_id: this._activeConvId, ciphertext_user1, ciphertext_user2,
-        reply_to: this._replyTo ? this._replyTo.id : '',
-        attachment: attachment,
+        reply_to: replyTo ? replyTo.id : '', attachment: attachment,
       });
 
-      if (!this._messages[this._activeConvId]) this._messages[this._activeConvId] = [];
-      this._messages[this._activeConvId].push({
-        id: result.id, conversation_id: this._activeConvId,
-        sender_id: this._myUserId || '__me__', ciphertext_user1, ciphertext_user2,
-        created_at: result.created_at, _plaintext: msgContent, _isMine: true,
-        reply_to: this._replyTo ? this._replyTo.id : '',
-        attachment: attachment,
-      });
-
-      input.value = '';
-      this._pendingFiles = [];
-      this._updateAttachPreview();
-      this.cancelReply();
-      this.renderMessages(this._activeConvId);
+      // Replace temp message with real one
+      const msgs = this._messages[this._activeConvId];
+      if (msgs) {
+        const idx = msgs.findIndex(m => m.id === tempId);
+        if (idx !== -1) {
+          msgs[idx].id = result.id;
+          msgs[idx].ciphertext_user1 = ciphertext_user1;
+          msgs[idx].ciphertext_user2 = ciphertext_user2;
+          msgs[idx].created_at = result.created_at;
+        }
+      }
       this._markRead(this._activeConvId);
-    } catch (e) { Toast.show(e.message || 'Failed to send', true); }
+    } catch (e) {
+      // Remove temp message on failure
+      const msgs = this._messages[this._activeConvId];
+      if (msgs) {
+        const idx = msgs.findIndex(m => m.id === tempId);
+        if (idx !== -1) msgs.splice(idx, 1);
+        this.renderMessages(this._activeConvId);
+      }
+      Toast.show(e.message || 'Failed to send', true);
+    } finally {
+      this._sending = false;
+    }
   },
 
   // ── REPLY ──
@@ -817,7 +854,8 @@ const Chat = {
 
       const isMine = m._isMine || (this._myUserId && m.sender_id === this._myUserId);
       const cls = isMine ? 'chat-msg chat-msg--me' : 'chat-msg chat-msg--them';
-      const rowCls = isMine ? 'chat-msg-row chat-msg-row--me' : 'chat-msg-row chat-msg-row--them';
+      const hasAttach = !!m.attachment;
+      const rowCls = (isMine ? 'chat-msg-row chat-msg-row--me' : 'chat-msg-row chat-msg-row--them') + (hasAttach ? ' chat-msg-row--has-attach' : '');
       const text = m._plaintext || '[Unable to decrypt]';
 
       // Reply quote

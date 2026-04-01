@@ -795,7 +795,6 @@ textarea.input {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px;
-  scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: var(--color-text-muted) var(--color-surface);
 }

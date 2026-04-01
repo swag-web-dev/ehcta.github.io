@@ -286,34 +286,8 @@ const Chat = {
     const emojiBtn = document.getElementById('chat-emoji-btn');
     if (emojiBtn) emojiBtn.addEventListener('click', () => this._toggleEmoji());
 
-    // Smooth scroll helper
-    function smoothWheel(el) {
-      let target = el.scrollTop;
-      let animating = false;
-      el.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        target = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, target + e.deltaY));
-        if (!animating) {
-          animating = true;
-          (function step() {
-            const diff = target - el.scrollTop;
-            if (Math.abs(diff) < 1) { el.scrollTop = target; animating = false; return; }
-            el.scrollTop += diff * 0.25;
-            requestAnimationFrame(step);
-          })();
-        }
-      }, { passive: false });
-      // Keep target in sync if user scrolls another way
-      el.addEventListener('scroll', () => { if (!animating) target = el.scrollTop; });
-    }
-
     const msgContainer = document.getElementById('chat-messages');
-    const msgWrap = msgContainer ? msgContainer.parentElement : null;
-    if (msgWrap) {
-      msgWrap.addEventListener('wheel', (e) => { e.preventDefault(); msgContainer.dispatchEvent(new WheelEvent('wheel', e)); }, { passive: false });
-    }
     if (msgContainer) {
-      smoothWheel(msgContainer);
       msgContainer.addEventListener('scroll', () => {
         const btn = document.getElementById('chat-scroll-btn');
         if (!btn) return;
@@ -321,9 +295,6 @@ const Chat = {
         btn.style.display = atBottom ? 'none' : 'block';
       });
     }
-
-    const convList = document.getElementById('chat-conv-list');
-    if (convList) smoothWheel(convList);
 
     // Close menus on outside click
     document.addEventListener('mousedown', (e) => {
@@ -1110,19 +1081,27 @@ const Chat = {
     const menu = menuEl.firstElementChild;
     document.body.appendChild(menu);
 
-    // Position: to the left of the dots, at the same level
+    // Position: to the left of the dots, clamped inside chat area
     requestAnimationFrame(() => {
       const dotsRect = dotsBtn ? dotsBtn.getBoundingClientRect() : row.getBoundingClientRect();
+      const chatArea = document.getElementById('chat-messages');
+      const chatRect = chatArea ? chatArea.getBoundingClientRect() : { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth };
       const menuH = menu.offsetHeight;
       const menuW = menu.offsetWidth;
+
+      // Left of the dots
       let left = dotsRect.left - menuW - 4;
-      if (left < 0) left = dotsRect.right + 4;
+      if (left < chatRect.left) left = dotsRect.right + 4;
+
+      // Top aligned with dots
       let top = dotsRect.top;
-      // If not enough room below, align bottom of menu to dots level
-      if (top + menuH > window.innerHeight) {
+      // If menu goes below chat area, push it up
+      if (top + menuH > chatRect.bottom) {
         top = dotsRect.bottom - menuH;
       }
-      if (top < 0) top = 4;
+      // Don't go above chat area
+      if (top < chatRect.top) top = chatRect.top;
+
       menu.style.left = left + 'px';
       menu.style.top = top + 'px';
     });

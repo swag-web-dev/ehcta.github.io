@@ -285,11 +285,14 @@ const Chat = {
         id: data.conversation_id, otherPublicKey: data.other_public_key,
         myPublicKey: data.my_public_key, user1_id: data.user1_id, user2_id: data.user2_id,
       };
-      await this.loadConversations();
-      await this.loadMessages(data.conversation_id);
+      // Show UI immediately, load data in parallel
       this._showInputArea(true);
-      this._markRead(data.conversation_id);
       this.showConvPanel();
+      await Promise.all([
+        this.loadConversations(),
+        this.loadMessages(data.conversation_id),
+        this._markRead(data.conversation_id),
+      ]);
     } catch (e) { Toast.show(e.message || 'Failed to start conversation', true); }
   },
 
@@ -759,13 +762,13 @@ const Chat = {
 
   async _openConversation(convId, otherUid) {
     this._lastStatus = null;
+    this.showConvPanel();
     if (!this._activeConvMeta || this._activeConvMeta.id !== convId) {
       await this.startConversation(otherUid);
-    } else {
-      this._activeConvId = convId;
-      await this.loadMessages(convId);
+      return;
     }
-    const conv = this._conversations.find(c => c.id === this._activeConvId);
+    this._activeConvId = convId;
+    const conv = this._conversations.find(c => c.id === convId);
     if (conv && conv.is_request) {
       this._showInputArea(false);
       document.getElementById('chat-header-name').innerHTML = this._esc(conv.other_user_name) + ' <span style="font-size:0.75rem;color:#ff9f4a;margin-left:8px;">Request</span>';
@@ -775,9 +778,12 @@ const Chat = {
     if (conv) {
       document.getElementById('chat-header-status').textContent = this._getLastSeenText(conv.other_last_seen);
     }
-    this._markRead(this._activeConvId);
+    // Load messages and mark read in parallel
+    await Promise.all([
+      this.loadMessages(convId),
+      this._markRead(convId),
+    ]);
     this.renderConversations();
-    this.showConvPanel();
   },
 
   // ── RENDER MESSAGES ──

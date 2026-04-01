@@ -828,7 +828,13 @@ textarea.input {
   border: var(--border, 1px solid #fff);
   padding: 8px;
   width: 280px;
-  max-height: 260px;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.emoji-picker__content {
+  flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;

@@ -282,6 +282,29 @@ const Chat = {
       fileInput.addEventListener('change', (e) => this._handleFiles(e.target.files));
     }
 
+    // Paste images/files
+    const msgInputForPaste = document.getElementById('chat-message-input');
+    if (msgInputForPaste) {
+      msgInputForPaste.addEventListener('paste', (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+          if (item.kind === 'file') {
+            e.preventDefault();
+            const file = item.getAsFile();
+            if (!file) continue;
+            if (file.size > 25 * 1024 * 1024) { Toast.show('File too large (max 25MB)', true); continue; }
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              this._pendingFiles.push({ name: file.name, type: file.type, size: file.size, dataUrl: ev.target.result });
+              this._updateAttachPreview();
+            };
+            reader.readAsDataURL(file);
+          }
+        }
+      });
+    }
+
     // Emoji
     const emojiBtn = document.getElementById('chat-emoji-btn');
     if (emojiBtn) emojiBtn.addEventListener('click', () => this._toggleEmoji());
@@ -605,15 +628,25 @@ const Chat = {
     const cats = Object.keys(EMOJI_CATEGORIES);
     let html = '<div class="emoji-picker"><div class="emoji-picker__tabs">';
     html += cats.map((c, i) => `<button class="emoji-picker__tab ${i===0?'emoji-picker__tab--active':''}" onclick="Chat._showEmojiCat(${i})">${EMOJI_CATEGORIES[c][0]}</button>`).join('');
-    html += '</div>';
+    html += '</div><div class="emoji-picker__content">';
     cats.forEach((c, i) => {
       html += `<div class="emoji-picker__grid" id="emoji-cat-${i}" style="${i>0?'display:none':''}">`;
       html += EMOJI_CATEGORIES[c].map(e => `<button class="emoji-picker__item" onclick="Chat._insertEmoji('${e}')">${e}</button>`).join('');
       html += '</div>';
     });
-    html += '</div>';
+    html += '</div></div>';
     picker.innerHTML = html;
     picker.style.display = 'block';
+
+    // Enable scroll wheel on emoji content area
+    const content = picker.querySelector('.emoji-picker__content');
+    if (content) {
+      content.addEventListener('wheel', (e) => {
+        content.scrollTop += e.deltaY;
+        e.preventDefault();
+        e.stopPropagation();
+      }, { passive: false });
+    }
   },
 
   _closeEmoji() {

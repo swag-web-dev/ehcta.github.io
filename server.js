@@ -67,6 +67,18 @@ async function initDB() {
       PRIMARY KEY (blocker_id, blocked_id)
     );
   `);
+  // Migrations - add columns if missing
+  const migrations = [
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TEXT DEFAULT ''",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to TEXT DEFAULT ''",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment TEXT DEFAULT ''",
+    "CREATE TABLE IF NOT EXISTS hidden_conversations (user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, PRIMARY KEY (user_id, conversation_id))",
+    "CREATE TABLE IF NOT EXISTS read_receipts (user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, last_read_at TEXT DEFAULT '', PRIMARY KEY (user_id, conversation_id))",
+    "CREATE TABLE IF NOT EXISTS typing_status (user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, conversation_id))",
+  ];
+  for (const m of migrations) {
+    try { await pool.query(m); } catch(e) {}
+  }
   // Create indexes (ignore if exists)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_conv_user1 ON conversations(user1_id)`);
@@ -77,7 +89,7 @@ async function initDB() {
 // ── MIDDLEWARE ──
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use((req, res, next) => {
   if (req.url.startsWith('/api/')) console.log(`${req.method} ${req.url}`);
   next();
@@ -126,6 +138,8 @@ app.use(session({
 function genId() { return crypto.randomBytes(8).toString('hex'); }
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  // Update last_seen
+  pool.query("UPDATE users SET last_seen = $1 WHERE id = $2", [new Date().toISOString(), req.session.userId]).catch(() => {});
   next();
 }
 function verifyCsrf(req, res, next) {
@@ -520,16 +534,21 @@ app.get('/api/chat/conversations', requireAuth, async (req, res) => {
       SELECT c.id, c.user1_id, c.user2_id, c.status, c.initiated_by, c.created_at,
         CASE WHEN c.user1_id = $1 THEN u2.display_name ELSE u1.display_name END AS other_user_name,
         CASE WHEN c.user1_id = $1 THEN u2.unique_id ELSE u1.unique_id END AS other_user_uid,
-        (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) AS last_message_at
+        CASE WHEN c.user1_id = $1 THEN u2.last_seen ELSE u1.last_seen END AS other_last_seen,
+        (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) AS last_message_at,
+        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.created_at > COALESCE((SELECT rr.last_read_at FROM read_receipts rr WHERE rr.user_id = $1 AND rr.conversation_id = c.id), '')) AS unread_count
       FROM conversations c
       JOIN users u1 ON u1.id = c.user1_id
       JOIN users u2 ON u2.id = c.user2_id
-      WHERE c.user1_id = $1 OR c.user2_id = $1
+      WHERE (c.user1_id = $1 OR c.user2_id = $1)
+        AND NOT EXISTS (SELECT 1 FROM hidden_conversations hc WHERE hc.user_id = $1 AND hc.conversation_id = c.id)
       ORDER BY last_message_at DESC NULLS LAST, c.created_at DESC
     `, [uid]);
     ok(res, rows.map(r => ({
       id: r.id, other_user_name: r.other_user_name, other_user_uid: r.other_user_uid,
       last_message_at: r.last_message_at || r.created_at,
+      other_last_seen: r.other_last_seen || '',
+      unread_count: parseInt(r.unread_count) || 0,
       status: r.status || 'accepted',
       is_request: r.status === 'pending' && r.initiated_by !== uid,
       is_pending: r.status === 'pending' && r.initiated_by === uid,
@@ -624,10 +643,10 @@ app.get('/api/chat/messages', requireAuth, async (req, res) => {
 
     let rows;
     if (after) {
-      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, created_at FROM messages WHERE conversation_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 100', [convId, after]);
+      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at FROM messages WHERE conversation_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 200', [convId, after]);
       rows = r.rows;
     } else {
-      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 100', [convId]);
+      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 200', [convId]);
       rows = r.rows;
     }
     ok(res, rows);
@@ -637,7 +656,7 @@ app.get('/api/chat/messages', requireAuth, async (req, res) => {
 app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) => {
   try {
     const uid = req.session.userId;
-    const { conversation_id, ciphertext_user1, ciphertext_user2 } = req.body;
+    const { conversation_id, ciphertext_user1, ciphertext_user2, reply_to, attachment } = req.body;
     if (!conversation_id || !ciphertext_user1 || !ciphertext_user2) return fail(res, 'Missing fields');
 
     const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [conversation_id]);
@@ -648,7 +667,8 @@ app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) =>
 
     const id = genId();
     const created_at = new Date().toISOString();
-    await pool.query('INSERT INTO messages (id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [id, conversation_id, uid, ciphertext_user1, ciphertext_user2, created_at]);
+    await pool.query('INSERT INTO messages (id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [id, conversation_id, uid, ciphertext_user1, ciphertext_user2, reply_to || '', attachment || '', created_at]);
     ok(res, { id, created_at });
   } catch (e) { fail(res, e.message, 500); }
 });
@@ -712,6 +732,50 @@ app.get('/api/chat/messages/status', requireAuth, async (req, res) => {
       last_id: last ? last.id : null,
       last_ct1: last ? last.ciphertext_user1.slice(0, 16) : null,
     });
+  } catch (e) { fail(res, e.message, 500); }
+});
+
+// ── TYPING ──
+app.post('/api/chat/typing', requireAuth, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const convId = (req.body.conversation_id || '').trim();
+    if (!convId) return ok(res);
+    await pool.query('INSERT INTO typing_status (user_id, conversation_id, updated_at) VALUES ($1,$2,$3) ON CONFLICT (user_id, conversation_id) DO UPDATE SET updated_at = $3', [uid, convId, new Date().toISOString()]);
+    ok(res);
+  } catch (e) { ok(res); }
+});
+
+app.get('/api/chat/typing', requireAuth, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const convId = (req.query.conversation_id || '').trim();
+    if (!convId) return ok(res, { typing: false });
+    const cutoff = new Date(Date.now() - 3000).toISOString();
+    const { rows } = await pool.query('SELECT user_id FROM typing_status WHERE conversation_id = $1 AND user_id != $2 AND updated_at > $3', [convId, uid, cutoff]);
+    ok(res, { typing: rows.length > 0 });
+  } catch (e) { ok(res, { typing: false }); }
+});
+
+// ── READ RECEIPTS ──
+app.post('/api/chat/read', requireAuth, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const convId = (req.body.conversation_id || '').trim();
+    if (!convId) return ok(res);
+    await pool.query('INSERT INTO read_receipts (user_id, conversation_id, last_read_at) VALUES ($1,$2,$3) ON CONFLICT (user_id, conversation_id) DO UPDATE SET last_read_at = $3', [uid, convId, new Date().toISOString()]);
+    ok(res);
+  } catch (e) { ok(res); }
+});
+
+// ── HIDE CONVERSATION (one-sided delete) ──
+app.post('/api/chat/conversations/hide', requireAuth, verifyCsrf, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const convId = (req.body.conversation_id || '').trim();
+    if (!convId) return fail(res, 'Missing conversation_id');
+    await pool.query('INSERT INTO hidden_conversations (user_id, conversation_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [uid, convId]);
+    ok(res);
   } catch (e) { fail(res, e.message, 500); }
 });
 

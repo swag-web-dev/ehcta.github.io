@@ -10,9 +10,10 @@ const app = express();
 const PORT = process.env.PORT || 5500;
 
 // ── DATABASE SETUP ──
+const dbUrl = process.env.DATABASE_URL || '';
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionString: dbUrl,
+  ssl: dbUrl.includes('sslmode=require') ? { rejectUnauthorized: false } : false,
 });
 
 async function initDB() {

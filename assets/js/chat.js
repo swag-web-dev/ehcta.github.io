@@ -290,40 +290,27 @@ const Chat = {
 
   async loadMessages(convId) {
     if (!convId) return;
+    // Skip reload while editing a message
+    if (this._editingMsgId) return;
     try {
-      const after = this._getLastTimestamp(convId);
       let url = 'api/chat/messages?conversation_id=' + encodeURIComponent(convId);
-      if (after) url += '&after=' + encodeURIComponent(after);
-
       const msgs = await API.get(url);
-      if (!this._messages[convId]) this._messages[convId] = [];
+      const newMessages = [];
 
       if (msgs && msgs.length > 0) {
-        // Deduplicate
-        const existingIds = new Set(this._messages[convId].map(m => m.id));
         for (const msg of msgs) {
-          if (!existingIds.has(msg.id)) {
-            // Determine which ciphertext to decrypt
-            try {
-              // Try to figure out if I'm user1 or user2
-              const conv = this._activeConvMeta;
-              let myCiphertext;
-              if (conv) {
-                // I need to decrypt based on whether I'm user1 or user2
-                // We can detect this by trying to decrypt user1 ciphertext first
-                myCiphertext = await this._decryptMyMessage(msg, convId);
-              } else {
-                myCiphertext = await this._decryptMyMessage(msg, convId);
-              }
-              msg._plaintext = myCiphertext;
-            } catch (e) {
-              msg._plaintext = '[Decryption failed]';
-            }
-            this._messages[convId].push(msg);
+          try {
+            msg._plaintext = await this._decryptMyMessage(msg, convId);
+          } catch (e) {
+            msg._plaintext = '[Decryption failed]';
           }
+          // Preserve _isMine flag
+          msg._isMine = this._myUserId && msg.sender_id === this._myUserId;
+          newMessages.push(msg);
         }
       }
 
+      this._messages[convId] = newMessages;
       this.renderMessages(convId);
     } catch (e) {
       console.error('Failed to load messages:', e);
@@ -521,6 +508,12 @@ const Chat = {
       await API.post('api/chat/conversations/accept', { conversation_id: convId });
       Toast.show('Request accepted');
       await this.loadConversations();
+      // Auto-open the accepted conversation
+      const conv = this._conversations.find(c => c.id === convId);
+      if (conv) {
+        await this._openConversation(convId, conv.other_user_uid);
+        this._showInputArea(true);
+      }
       this.renderConversations();
     } catch (e) {
       Toast.show('Failed: ' + e.message, true);

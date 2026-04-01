@@ -268,9 +268,15 @@ const Chat = {
       msgInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.sendMessage(); }
       });
-      // Typing indicator
       msgInput.addEventListener('input', () => this._sendTyping());
     }
+    // Fallback: delegate Enter key on the input in case init runs early
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && document.activeElement && document.activeElement.id === 'chat-message-input') {
+        e.preventDefault();
+        this.sendMessage();
+      }
+    });
 
     // Attach
     const attachBtn = document.getElementById('chat-attach-btn');

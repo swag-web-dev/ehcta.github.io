@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 5500;
 const dbUrl = process.env.DATABASE_URL || '';
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: dbUrl.includes('sslmode=require') ? { rejectUnauthorized: false } : false,
+  ssl: dbUrl ? { rejectUnauthorized: false } : false,
 });
 
 async function initDB() {

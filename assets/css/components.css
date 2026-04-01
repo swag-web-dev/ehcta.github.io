@@ -781,21 +781,23 @@ textarea.input {
   min-height: 0;
 }
 .chat-messages-wrap {
-  flex: 1 1 0;
+  flex: 1;
   min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
   position: relative;
+  overflow: hidden;
 }
 .chat-messages-wrap #chat-messages {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow-y: scroll;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
   overflow-x: hidden;
   padding: 16px;
   scrollbar-width: thin;
   scrollbar-color: var(--color-text-muted) var(--color-surface);
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 700px) {

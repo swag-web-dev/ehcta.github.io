@@ -288,6 +288,14 @@ const Chat = {
 
     const msgContainer = document.getElementById('chat-messages');
     if (msgContainer) {
+      // Forward wheel from wrapper to the scrollable container
+      const wrap = msgContainer.parentElement;
+      if (wrap) {
+        wrap.addEventListener('wheel', (e) => {
+          msgContainer.scrollTop += e.deltaY;
+          e.preventDefault();
+        }, { passive: false });
+      }
       msgContainer.addEventListener('scroll', () => {
         const btn = document.getElementById('chat-scroll-btn');
         if (!btn) return;

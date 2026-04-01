@@ -395,15 +395,33 @@ const Chat = {
     }
   },
 
+  _lastStatus: null,
+
   _startPolling() {
     this._stopPolling();
     this._pollTimer = setInterval(() => {
+      if (this._editingMsgId) return;
       if (this._activeConvId) {
-        this.loadMessages(this._activeConvId);
+        this._checkForChanges(this._activeConvId);
       }
-      // Also refresh conversation list
       this.loadConversations();
     }, 5000);
+  },
+
+  async _checkForChanges(convId) {
+    try {
+      const status = await API.get('api/chat/messages/status?conversation_id=' + encodeURIComponent(convId));
+      const msgs = this._messages[convId] || [];
+      const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+      const changed = !this._lastStatus
+        || status.count !== this._lastStatus.count
+        || status.last_id !== this._lastStatus.last_id
+        || status.last_ct1 !== this._lastStatus.last_ct1;
+      this._lastStatus = status;
+      if (changed) {
+        await this.loadMessages(convId);
+      }
+    } catch (e) {}
   },
 
   _stopPolling() {
@@ -411,12 +429,6 @@ const Chat = {
       clearInterval(this._pollTimer);
       this._pollTimer = null;
     }
-  },
-
-  _getLastTimestamp(convId) {
-    const msgs = this._messages[convId];
-    if (!msgs || msgs.length === 0) return null;
-    return msgs[msgs.length - 1].created_at;
   },
 
   renderConversations() {

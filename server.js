@@ -695,6 +695,26 @@ app.post('/api/chat/messages/edit', requireAuth, verifyCsrf, async (req, res) =>
   } catch (e) { fail(res, e.message, 500); }
 });
 
+app.get('/api/chat/messages/status', requireAuth, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const convId = (req.query.conversation_id || '').trim();
+    if (!convId) return fail(res, 'Missing conversation_id');
+    const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [convId]);
+    const conv = cRows[0];
+    if (!conv) return fail(res, 'Conversation not found', 404);
+    if (conv.user1_id !== uid && conv.user2_id !== uid) return fail(res, 'Not a participant', 403);
+    const { rows } = await pool.query('SELECT COUNT(*) as count FROM messages WHERE conversation_id = $1', [convId]);
+    const { rows: lastRows } = await pool.query('SELECT id, ciphertext_user1, ciphertext_user2 FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1', [convId]);
+    const last = lastRows[0];
+    ok(res, {
+      count: parseInt(rows[0].count),
+      last_id: last ? last.id : null,
+      last_ct1: last ? last.ciphertext_user1.slice(0, 16) : null,
+    });
+  } catch (e) { fail(res, e.message, 500); }
+});
+
 // ── SERVE FRONTEND ──
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 

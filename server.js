@@ -10,7 +10,8 @@ const app = express();
 const PORT = process.env.PORT || 5500;
 
 // ── DATABASE SETUP ──
-const dataDir = path.join(__dirname, 'data');
+// Use RAILWAY_VOLUME_MOUNT_PATH for persistent storage on Railway, otherwise local ./data
+const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new Database(path.join(dataDir, 'ehcta.db'));

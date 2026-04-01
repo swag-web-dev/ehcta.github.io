@@ -57,9 +57,11 @@
       border: var(--border, 1px solid #fff);
       min-width: 120px;
       padding: 4px 0;
+      bottom: 100%;
+      margin-bottom: 4px;
     }
-    .chat-msg-row--me .chat-msg__menu { right: 0; top: 100%; margin-top: 2px; }
-    .chat-msg-row--them .chat-msg__menu { left: 0; top: 100%; margin-top: 2px; }
+    .chat-msg-row--me .chat-msg__menu { right: 0; }
+    .chat-msg-row--them .chat-msg__menu { left: 0; }
     .chat-msg__menu-item {
       display: block; width: 100%;
       background: none; border: none; color: var(--color-text, #fff);
@@ -288,13 +290,13 @@ const Chat = {
     if (msgWrap) {
       msgWrap.addEventListener('wheel', (e) => {
         e.preventDefault();
-        msgContainer.scrollTop += e.deltaY;
+        msgContainer.scrollBy({ top: e.deltaY, behavior: 'smooth' });
       }, { passive: false });
     }
     if (msgContainer) {
       msgContainer.addEventListener('wheel', (e) => {
         e.preventDefault();
-        msgContainer.scrollTop += e.deltaY;
+        msgContainer.scrollBy({ top: e.deltaY, behavior: 'smooth' });
       }, { passive: false });
       msgContainer.addEventListener('scroll', () => {
         const btn = document.getElementById('chat-scroll-btn');
@@ -309,7 +311,7 @@ const Chat = {
     if (convList) {
       convList.addEventListener('wheel', (e) => {
         e.preventDefault();
-        convList.scrollTop += e.deltaY;
+        convList.scrollBy({ top: e.deltaY, behavior: 'smooth' });
       }, { passive: false });
     }
 
@@ -996,8 +998,8 @@ const Chat = {
         } catch (e) {}
       }
 
-      const footer = `<div class="chat-msg__footer"><span class="chat-msg__time">${this._formatTimeShort(m.created_at)}</span></div>`;
       const dotsBtn = `<button class="chat-msg__dots" onclick="event.stopPropagation();Chat._toggleMenu('${this._esc(m.id)}')">&#8942;</button>`;
+      const footer = `<div class="chat-msg__footer"><span class="chat-msg__time">${this._formatTimeShort(m.created_at)}</span>${dotsBtn}</div>`;
 
       html += `<div class="${rowCls}" data-msg-id="${this._esc(m.id)}">
         <div class="${cls}">
@@ -1006,7 +1008,6 @@ const Chat = {
           ${attachHtml}
           ${footer}
         </div>
-        ${dotsBtn}
       </div>`;
     }
 

@@ -290,20 +290,34 @@ const Chat = {
     const emojiBtn = document.getElementById('chat-emoji-btn');
     if (emojiBtn) emojiBtn.addEventListener('click', () => this._toggleEmoji());
 
-    // Scroll chat messages with mouse wheel
+    // Smooth scroll helper
+    function smoothWheel(el) {
+      let target = el.scrollTop;
+      let animating = false;
+      el.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        target = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, target + e.deltaY));
+        if (!animating) {
+          animating = true;
+          (function step() {
+            const diff = target - el.scrollTop;
+            if (Math.abs(diff) < 1) { el.scrollTop = target; animating = false; return; }
+            el.scrollTop += diff * 0.25;
+            requestAnimationFrame(step);
+          })();
+        }
+      }, { passive: false });
+      // Keep target in sync if user scrolls another way
+      el.addEventListener('scroll', () => { if (!animating) target = el.scrollTop; });
+    }
+
     const msgContainer = document.getElementById('chat-messages');
     const msgWrap = msgContainer ? msgContainer.parentElement : null;
     if (msgWrap) {
-      msgWrap.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        msgContainer.scrollBy({ top: e.deltaY, behavior: 'smooth' });
-      }, { passive: false });
+      msgWrap.addEventListener('wheel', (e) => { e.preventDefault(); msgContainer.dispatchEvent(new WheelEvent('wheel', e)); }, { passive: false });
     }
     if (msgContainer) {
-      msgContainer.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        msgContainer.scrollBy({ top: e.deltaY, behavior: 'smooth' });
-      }, { passive: false });
+      smoothWheel(msgContainer);
       msgContainer.addEventListener('scroll', () => {
         const btn = document.getElementById('chat-scroll-btn');
         if (!btn) return;
@@ -312,14 +326,8 @@ const Chat = {
       });
     }
 
-    // Scroll conversation list with mouse wheel
     const convList = document.getElementById('chat-conv-list');
-    if (convList) {
-      convList.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        convList.scrollBy({ top: e.deltaY, behavior: 'smooth' });
-      }, { passive: false });
-    }
+    if (convList) smoothWheel(convList);
 
     // Close menus on outside click
     document.addEventListener('mousedown', (e) => {

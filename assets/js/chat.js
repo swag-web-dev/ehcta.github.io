@@ -532,11 +532,14 @@ const Chat = {
   async _checkConversations() {
     try {
       const convs = await API.get('api/chat/conversations');
-      const json = JSON.stringify(convs.map(c => c.id + c.unread_count + c.last_message_at + c.status + c.other_last_seen));
+      const json = JSON.stringify(convs.map(c => c.id + c.unread_count + c.last_message_at + c.status));
       if (json !== this._lastConvJson) {
         this._lastConvJson = json;
         this._conversations = convs || [];
         this.renderConversations();
+      } else {
+        // Update data without re-rendering (for last_seen changes etc)
+        this._conversations = convs || [];
       }
     } catch (e) {}
   },
@@ -571,12 +574,15 @@ const Chat = {
   },
 
   // ── RENDER CONVERSATIONS ──
+  _lastConvHtml: '',
+
   renderConversations() {
     const list = document.getElementById('chat-conv-list');
     if (!list) return;
 
     if (this._conversations.length === 0) {
       list.innerHTML = '<div style="padding:24px 16px;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">No conversations yet.<br>Search for a user above.</div>';
+      this._lastConvHtml = '';
       return;
     }
 
@@ -612,7 +618,13 @@ const Chat = {
       html += accepted.map(c => this._renderConvItem(c)).join('');
     }
 
-    list.innerHTML = html || '<div style="padding:24px 16px;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">No conversations yet.</div>';
+    html = html || '<div style="padding:24px 16px;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">No conversations yet.</div>';
+
+    // Only replace DOM if content actually changed
+    if (html !== this._lastConvHtml) {
+      this._lastConvHtml = html;
+      list.innerHTML = html;
+    }
   },
 
   _renderConvItem(c, timeColor, timeText) {

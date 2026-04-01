@@ -161,11 +161,30 @@
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(0,0,0,0.92); z-index: 9999;
       display: flex; align-items: center; justify-content: center;
-      cursor: zoom-out;
     }
-    .chat-lightbox img {
+    .chat-lightbox__img-wrap {
+      position: relative;
+      overflow: hidden;
+      max-width: 92vw; max-height: 92vh;
+      cursor: zoom-in;
+    }
+    .chat-lightbox__img-wrap--zoomed {
+      cursor: grab;
+      max-width: none; max-height: none;
+      width: 92vw; height: 92vh;
+    }
+    .chat-lightbox__img-wrap--zoomed.dragging { cursor: grabbing; }
+    .chat-lightbox__img-wrap img {
+      display: block;
       max-width: 92vw; max-height: 92vh; object-fit: contain;
-      border: 1px solid rgba(255,255,255,0.15);
+      transition: transform 0.2s ease;
+      transform-origin: center center;
+    }
+    .chat-lightbox__img-wrap--zoomed img {
+      max-width: none; max-height: none;
+      width: auto; height: auto;
+      position: absolute;
+      transition: none;
     }
     .chat-lightbox__close {
       position: absolute; top: 16px; right: 24px;
@@ -179,11 +198,13 @@
 
 // ── EMOJI DATA ──
 const EMOJI_CATEGORIES = {
-  'Smileys': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','🫤','😟','🙁','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'],
-  'Gestures': ['👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💪','🦾','🦿'],
-  'Hearts': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟'],
-  'Objects': ['🔔','🔕','🎵','🎶','💬','💭','🗯️','📱','💻','🖥️','🖨️','📷','📹','🎥','📞','☎️','📺','🔑','🗝️','🔒','🔓','📎','✂️','📝','✏️','🖊️','📁','📂','📅','📌','📍'],
-  'Symbols': ['✅','❌','❓','❗','‼️','⭐','🌟','💫','✨','🔥','💯','🎯','💢','💥','💤','🕐','⏰','⏳','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔶','🔷','▶️','⏸️','⏹️','⏺️'],
+  'Smileys': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','😍','😘','😗','😚','😙','😋','😛','😜','😝','🤑','🤗','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','😵','🤯','🤠','😎','🤓','😕','😟','🙁','😮','😯','😲','😳','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','😤','😡','😠','🤬','😈','👿','💀','💩','🤡','👹','👺','👻','👽','👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾'],
+  'Gestures': ['👋','🤚','✋','🖖','👌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','💪','👀','👁️','👅','👄'],
+  'Hearts': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','💋','💍','💎'],
+  'Animals': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🐢','🐍','🐙','🦑','🦐','🦀','🐠','🐟','🐡','🐬','🐳','🐋'],
+  'Food': ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🍈','🍒','🍑','🥝','🍅','🥑','🍆','🌶️','🌽','🥕','🥔','🍠','🍯','🍞','🧀','🍖','🍗','🥩','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🍿','🧂','🥤','🍺','🍻','🥂','🍷','🍸','🍹','🍾','☕','🍵','🧃'],
+  'Objects': ['🔔','🎵','🎶','💬','💭','📱','💻','🖥️','📷','🎥','📞','📺','🔑','🔒','🔓','📎','✂️','📝','✏️','📁','📂','📅','📌','📍','🎮','🎲','🎭','🎨','🎤','🎧','🎹','🎸','🎺','🎷','🥁','🎬','📸','💡','🔦','📖','📚'],
+  'Symbols': ['✅','❌','❓','❗','⭐','✨','🔥','💯','🎯','💥','💤','⏰','⏳','🔴','🟡','🟢','🔵','⚫','⚪','🔶','🔷','▶️','⏸️','⏹️','🔊','🔇','🔔','🔕','💲','🏆','🥇','🥈','🥉','⚽','🏀','🏈','⚾','🎾','🏐','🎱'],
 };
 
 const Chat = {
@@ -1174,15 +1195,87 @@ const Chat = {
   _openLightbox(src) {
     const overlay = document.createElement('div');
     overlay.className = 'chat-lightbox';
-    overlay.innerHTML = `<button class="chat-lightbox__close" title="Close">&times;</button><img src="${src}">`;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-lightbox__img-wrap';
+
+    const img = document.createElement('img');
+    img.src = src;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'chat-lightbox__close';
+    closeBtn.title = 'Close';
+    closeBtn.innerHTML = '&times;';
+
+    wrap.appendChild(img);
+    overlay.appendChild(closeBtn);
+    overlay.appendChild(wrap);
+
+    let zoomed = false;
+    let dragging = false;
+    let startX = 0, startY = 0, scrollX = 0, scrollY = 0;
+
+    // Close on overlay background or close button
+    const closeLightbox = () => { overlay.remove(); document.removeEventListener('keydown', keyHandler); };
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay || e.target.classList.contains('chat-lightbox__close')) {
-        overlay.remove();
+      if (e.target === overlay || e.target === closeBtn) closeLightbox();
+    });
+    closeBtn.addEventListener('click', closeLightbox);
+
+    // Click image to zoom in/out
+    img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (zoomed) {
+        // Zoom out
+        zoomed = false;
+        wrap.classList.remove('chat-lightbox__img-wrap--zoomed');
+        img.style.left = '';
+        img.style.top = '';
+      } else {
+        // Zoom in
+        zoomed = true;
+        wrap.classList.add('chat-lightbox__img-wrap--zoomed');
+        // Center the image
+        const natW = img.naturalWidth || img.width;
+        const natH = img.naturalHeight || img.height;
+        img.style.width = natW + 'px';
+        img.style.height = natH + 'px';
+        img.style.left = ((wrap.clientWidth - natW) / 2) + 'px';
+        img.style.top = ((wrap.clientHeight - natH) / 2) + 'px';
       }
     });
-    document.addEventListener('keydown', function handler(e) {
-      if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', handler); }
+
+    // Drag to pan when zoomed
+    wrap.addEventListener('mousedown', (e) => {
+      if (!zoomed || e.target === closeBtn) return;
+      e.preventDefault();
+      dragging = true;
+      wrap.classList.add('dragging');
+      startX = e.clientX;
+      startY = e.clientY;
+      scrollX = parseInt(img.style.left || 0);
+      scrollY = parseInt(img.style.top || 0);
     });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      img.style.left = (scrollX + dx) + 'px';
+      img.style.top = (scrollY + dy) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+      dragging = false;
+      wrap.classList.remove('dragging');
+    });
+
+    // Escape to close
+    function keyHandler(e) {
+      if (e.key === 'Escape') closeLightbox();
+    }
+    document.addEventListener('keydown', keyHandler);
+
     document.body.appendChild(overlay);
   },
 

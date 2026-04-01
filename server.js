@@ -557,6 +557,34 @@ app.post('/api/chat/messages/send', requireAuth, verifyCsrf, (req, res) => {
   ok(res, { id, created_at });
 });
 
+app.post('/api/chat/messages/delete', requireAuth, verifyCsrf, (req, res) => {
+  const uid = req.session.userId;
+  const msgId = (req.body.message_id || '').trim();
+  if (!msgId) return fail(res, 'Missing message_id');
+  const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(msgId);
+  if (!msg) return fail(res, 'Message not found', 404);
+  if (msg.sender_id !== uid) return fail(res, 'You can only unsend your own messages', 403);
+  const conv = db.prepare('SELECT * FROM conversations WHERE id = ?').get(msg.conversation_id);
+  if (!conv) return fail(res, 'Conversation not found', 404);
+  if (conv.user1_id !== uid && conv.user2_id !== uid) return fail(res, 'Not a participant', 403);
+  db.prepare('DELETE FROM messages WHERE id = ?').run(msgId);
+  ok(res);
+});
+
+app.post('/api/chat/messages/edit', requireAuth, verifyCsrf, (req, res) => {
+  const uid = req.session.userId;
+  const { message_id, ciphertext_user1, ciphertext_user2 } = req.body;
+  if (!message_id || !ciphertext_user1 || !ciphertext_user2) return fail(res, 'Missing fields');
+  const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(message_id);
+  if (!msg) return fail(res, 'Message not found', 404);
+  if (msg.sender_id !== uid) return fail(res, 'You can only edit your own messages', 403);
+  const conv = db.prepare('SELECT * FROM conversations WHERE id = ?').get(msg.conversation_id);
+  if (!conv) return fail(res, 'Conversation not found', 404);
+  if (conv.user1_id !== uid && conv.user2_id !== uid) return fail(res, 'Not a participant', 403);
+  db.prepare('UPDATE messages SET ciphertext_user1 = ?, ciphertext_user2 = ? WHERE id = ?').run(ciphertext_user1, ciphertext_user2, message_id);
+  ok(res);
+});
+
 // ── SERVE FRONTEND ──
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 

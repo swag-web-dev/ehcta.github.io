@@ -41,6 +41,46 @@
     .chat-msg--me .chat-msg__time { text-align: right; }
     .chat-msg--them .chat-msg__time { text-align: left; }
 
+    .chat-msg__actions {
+      display: none;
+      gap: 6px;
+      margin-top: 4px;
+      justify-content: flex-end;
+    }
+    .chat-msg--me:hover .chat-msg__actions {
+      display: flex;
+    }
+    .chat-msg__action-btn {
+      background: none;
+      border: none;
+      color: var(--color-text-muted, #888);
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+    .chat-msg__action-btn:hover {
+      color: var(--color-text, #fff);
+    }
+    .chat-edit-input {
+      width: 100%;
+      background: var(--color-input-bg, #111);
+      border: var(--border-muted, 1px solid #333);
+      color: var(--color-text, #fff);
+      font-size: 0.85rem;
+      padding: 6px 8px;
+      margin-top: 6px;
+      font-family: inherit;
+    }
+    .chat-edit-input:focus { outline: none; border-color: var(--color-accent, #fff); }
+    .chat-edit-btns {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+      justify-content: flex-end;
+    }
+
     .chat-conv-item {
       padding: 12px 16px;
       cursor: pointer;
@@ -566,9 +606,14 @@ const Chat = {
       const isMine = m._isMine || (this._myUserId && m.sender_id === this._myUserId);
       const cls = isMine ? 'chat-msg chat-msg--me' : 'chat-msg chat-msg--them';
       const text = m._plaintext || '[Unable to decrypt]';
-      return `<div class="${cls}">
-        <div>${this._esc(text)}</div>
+      const actions = isMine ? `<div class="chat-msg__actions">
+        <button class="chat-msg__action-btn" onclick="Chat.startEdit('${this._esc(m.id)}')">edit</button>
+        <button class="chat-msg__action-btn" onclick="Chat.unsendMessage('${this._esc(m.id)}')">unsend</button>
+      </div>` : '';
+      return `<div class="${cls}" data-msg-id="${this._esc(m.id)}">
+        <div class="chat-msg__text">${this._esc(text)}</div>
         <div class="chat-msg__time">${this._formatTime(m.created_at)}</div>
+        ${actions}
       </div>`;
     }).join('');
 
@@ -596,6 +641,106 @@ const Chat = {
     const d = document.createElement('div');
     d.textContent = str || '';
     return d.innerHTML;
+  },
+
+  async unsendMessage(msgId) {
+    if (!this._activeConvId) return;
+    try {
+      await API.post('api/chat/messages/delete', { message_id: msgId });
+      // Remove from local state
+      const msgs = this._messages[this._activeConvId];
+      if (msgs) {
+        const idx = msgs.findIndex(m => m.id === msgId);
+        if (idx !== -1) msgs.splice(idx, 1);
+      }
+      this.renderMessages(this._activeConvId);
+    } catch (e) {
+      Toast.show(e.message || 'Failed to unsend', true);
+    }
+  },
+
+  _editingMsgId: null,
+
+  startEdit(msgId) {
+    if (!this._activeConvId) return;
+    const msgs = this._messages[this._activeConvId];
+    if (!msgs) return;
+    const msg = msgs.find(m => m.id === msgId);
+    if (!msg) return;
+
+    this._editingMsgId = msgId;
+    const el = document.querySelector(`[data-msg-id="${msgId}"]`);
+    if (!el) return;
+
+    const textEl = el.querySelector('.chat-msg__text');
+    const actionsEl = el.querySelector('.chat-msg__actions');
+    if (actionsEl) actionsEl.style.display = 'none';
+
+    const currentText = msg._plaintext || '';
+    textEl.innerHTML = `<input type="text" class="chat-edit-input" id="chat-edit-input" value="${this._esc(currentText).replace(/"/g, '&quot;')}" autocomplete="off">
+      <div class="chat-edit-btns">
+        <button class="chat-msg__action-btn" onclick="Chat.cancelEdit('${this._esc(msgId)}')">cancel</button>
+        <button class="chat-msg__action-btn" onclick="Chat.submitEdit('${this._esc(msgId)}')">save</button>
+      </div>`;
+
+    const input = document.getElementById('chat-edit-input');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); this.submitEdit(msgId); }
+        if (e.key === 'Escape') this.cancelEdit(msgId);
+      });
+    }
+  },
+
+  cancelEdit(msgId) {
+    this._editingMsgId = null;
+    this.renderMessages(this._activeConvId);
+  },
+
+  async submitEdit(msgId) {
+    const input = document.getElementById('chat-edit-input');
+    if (!input) return;
+    const newText = input.value.trim();
+    if (!newText) return;
+
+    const meta = this._activeConvMeta;
+    if (!meta || !meta.otherPublicKey || !this._myPublicKey) {
+      Toast.show('Cannot edit - missing keys', true);
+      return;
+    }
+
+    try {
+      const amUser1 = await this._amIUser1(meta.user1_id, meta.user2_id);
+      const user1PubKey = amUser1 ? this._myPublicKey : meta.otherPublicKey;
+      const user2PubKey = amUser1 ? meta.otherPublicKey : this._myPublicKey;
+
+      const ciphertext_user1 = await Crypto.encryptForChat(newText, user1PubKey);
+      const ciphertext_user2 = await Crypto.encryptForChat(newText, user2PubKey);
+
+      await API.post('api/chat/messages/edit', {
+        message_id: msgId,
+        ciphertext_user1,
+        ciphertext_user2,
+      });
+
+      // Update local state
+      const msgs = this._messages[this._activeConvId];
+      if (msgs) {
+        const msg = msgs.find(m => m.id === msgId);
+        if (msg) {
+          msg._plaintext = newText;
+          msg.ciphertext_user1 = ciphertext_user1;
+          msg.ciphertext_user2 = ciphertext_user2;
+        }
+      }
+
+      this._editingMsgId = null;
+      this.renderMessages(this._activeConvId);
+    } catch (e) {
+      Toast.show(e.message || 'Failed to edit', true);
+    }
   },
 
   destroy() {

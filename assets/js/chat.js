@@ -8,28 +8,10 @@
       align-items: flex-end;
       gap: 6px;
       margin-bottom: 4px;
+      position: relative;
     }
     .chat-msg-row--me { flex-direction: row-reverse; }
     .chat-msg-row--them { flex-direction: row; }
-    .chat-msg-row--has-attach {
-      flex-direction: column !important;
-      align-items: flex-end;
-    }
-    .chat-msg-row--has-attach.chat-msg-row--them {
-      align-items: flex-start;
-    }
-    .chat-msg-row--has-attach .chat-msg-row__side {
-      padding: 0;
-    }
-    .chat-msg-row__side {
-      display: flex;
-      gap: 2px;
-      opacity: 0;
-      transition: opacity 0.15s;
-      flex-shrink: 0;
-      padding-bottom: 2px;
-    }
-    .chat-msg-row:hover .chat-msg-row__side { opacity: 1; }
     .chat-msg {
       max-width: 70%;
       padding: 8px 12px;
@@ -57,12 +39,53 @@
       gap: 8px;
     }
     .chat-msg__time { font-size: 0.6rem; opacity: 0.5; white-space: nowrap; }
-    .chat-msg__action-btn {
-      background: none; border: none; color: var(--color-text-muted, #888);
-      font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.06em;
-      cursor: pointer; padding: 0 2px;
+    .chat-msg__dots {
+      position: absolute;
+      top: 2px;
+      opacity: 0;
+      transition: opacity 0.15s;
+      background: none; border: none;
+      color: var(--color-text-muted, #888);
+      font-size: 1rem; cursor: pointer; padding: 0 4px; line-height: 1;
     }
-    .chat-msg__action-btn:hover { color: var(--color-text, #fff); }
+    .chat-msg-row--me .chat-msg__dots { left: -20px; }
+    .chat-msg-row--them .chat-msg__dots { right: -20px; }
+    .chat-msg-row:hover .chat-msg__dots { opacity: 1; }
+    .chat-msg__dots:hover { color: var(--color-text, #fff); }
+    .chat-msg__menu {
+      position: absolute;
+      z-index: 55;
+      background: var(--color-bg, #000);
+      border: var(--border, 1px solid #fff);
+      min-width: 120px;
+      padding: 4px 0;
+    }
+    .chat-msg-row--me .chat-msg__menu { left: 0; top: 0; }
+    .chat-msg-row--them .chat-msg__menu { right: 0; top: 0; }
+    .chat-msg__menu-item {
+      display: block; width: 100%;
+      background: none; border: none; color: var(--color-text, #fff);
+      font-size: 0.75rem; padding: 6px 14px;
+      cursor: pointer; text-align: left;
+      font-family: var(--font-body, sans-serif);
+    }
+    .chat-msg__menu-item:hover { background: var(--color-surface-hover, rgba(255,255,255,0.08)); }
+    .chat-msg__menu-item--danger { color: #e74c3c; }
+    .chat-pin-item {
+      padding: 10px; border-bottom: var(--border-muted, 1px solid #333);
+      font-size: 0.8rem; line-height: 1.4;
+    }
+    .chat-pin-item:last-child { border-bottom: none; }
+    .chat-pin-item__text { margin-bottom: 4px; word-break: break-word; }
+    .chat-pin-item__meta {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.65rem; color: var(--color-text-muted, #888);
+    }
+    .chat-pin-item__unpin {
+      background: none; border: none; color: var(--color-text-muted);
+      font-size: 0.6rem; cursor: pointer; text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .chat-pin-item__unpin:hover { color: #e74c3c; }
     .chat-edit-input {
       width: 100%; background: var(--color-input-bg, #111);
       border: var(--border-muted, 1px solid #333); color: var(--color-text, #fff);
@@ -235,8 +258,11 @@ const Chat = {
       });
     }
 
-    // Close emoji on outside click
+    // Close menus on outside click
     document.addEventListener('mousedown', (e) => {
+      if (this._openMenuId && !e.target.closest('.chat-msg__menu') && !e.target.closest('.chat-msg__dots')) {
+        this._closeMenu();
+      }
       if (this._emojiOpen && !e.target.closest('#chat-emoji-picker') && !e.target.closest('#chat-emoji-btn')) {
         this._closeEmoji();
       }
@@ -882,18 +908,8 @@ const Chat = {
         } catch (e) {}
       }
 
-      // Footer: time on left, actions on right - all on one line
-      const replyBtn = `<button class="chat-msg__action-btn" onclick="Chat.setReply('${this._esc(m.id)}')">reply</button>`;
-      let actionBtns = replyBtn;
-      if (isMine) {
-        actionBtns += `<button class="chat-msg__action-btn" onclick="Chat.startEdit('${this._esc(m.id)}')">edit</button>`;
-        actionBtns += `<button class="chat-msg__action-btn" onclick="Chat.unsendMessage('${this._esc(m.id)}')">unsend</button>`;
-      }
-
-      // Side actions (appear to left/right of bubble on hover)
-      const sideActions = `<div class="chat-msg-row__side">${actionBtns}</div>`;
-
       const footer = `<div class="chat-msg__footer"><span class="chat-msg__time">${this._formatTimeShort(m.created_at)}</span></div>`;
+      const dotsBtn = `<button class="chat-msg__dots" onclick="event.stopPropagation();Chat._toggleMenu('${this._esc(m.id)}')">&#8942;</button>`;
 
       html += `<div class="${rowCls}" data-msg-id="${this._esc(m.id)}">
         <div class="${cls}">
@@ -902,7 +918,7 @@ const Chat = {
           ${attachHtml}
           ${footer}
         </div>
-        ${sideActions}
+        ${dotsBtn}
       </div>`;
     }
 
@@ -925,6 +941,8 @@ const Chat = {
   _showInputArea(show) {
     const area = document.getElementById('chat-input-area');
     if (area) area.style.display = show ? 'block' : 'none';
+    const pinBtn = document.getElementById('chat-pin-toggle');
+    if (pinBtn) pinBtn.style.display = show ? 'inline' : 'none';
   },
 
   _formatTime(iso) {
@@ -953,6 +971,100 @@ const Chat = {
     } catch (e) { Toast.show(e.message || 'Failed to unsend', true); }
   },
 
+  // ── 3-DOT MENU ──
+  _openMenuId: null,
+
+  _toggleMenu(msgId) {
+    if (this._openMenuId === msgId) { this._closeMenu(); return; }
+    this._closeMenu();
+    this._openMenuId = msgId;
+    const row = document.querySelector(`[data-msg-id="${msgId}"]`);
+    if (!row) return;
+    const msgs = this._messages[this._activeConvId] || [];
+    const msg = msgs.find(m => m.id === msgId);
+    const isMine = msg && (msg._isMine || (this._myUserId && msg.sender_id === this._myUserId));
+
+    let menuHtml = '<div class="chat-msg__menu">';
+    menuHtml += `<button class="chat-msg__menu-item" onclick="Chat.setReply('${this._esc(msgId)}');Chat._closeMenu()">Reply</button>`;
+    menuHtml += `<button class="chat-msg__menu-item" onclick="Chat.pinMessage('${this._esc(msgId)}');Chat._closeMenu()">Pin</button>`;
+    if (isMine) {
+      menuHtml += `<button class="chat-msg__menu-item" onclick="Chat.startEdit('${this._esc(msgId)}');Chat._closeMenu()">Edit</button>`;
+      menuHtml += `<button class="chat-msg__menu-item chat-msg__menu-item--danger" onclick="Chat.unsendMessage('${this._esc(msgId)}');Chat._closeMenu()">Unsend</button>`;
+    }
+    menuHtml += '</div>';
+
+    const menuEl = document.createElement('div');
+    menuEl.id = 'chat-active-menu';
+    menuEl.innerHTML = menuHtml;
+    row.appendChild(menuEl.firstElementChild);
+  },
+
+  _closeMenu() {
+    this._openMenuId = null;
+    const existing = document.querySelector('.chat-msg__menu');
+    if (existing) existing.remove();
+  },
+
+  // ── PIN ──
+  _pinPanelOpen: false,
+
+  async pinMessage(msgId) {
+    try {
+      await API.post('api/chat/messages/pin', { message_id: msgId });
+      Toast.show('Message pinned');
+    } catch (e) { Toast.show(e.message || 'Failed to pin', true); }
+  },
+
+  async unpinMessage(msgId) {
+    try {
+      await API.post('api/chat/messages/unpin', { message_id: msgId });
+      Toast.show('Message unpinned');
+      if (this._pinPanelOpen) this._loadPins();
+    } catch (e) { Toast.show(e.message || 'Failed to unpin', true); }
+  },
+
+  togglePinPanel() {
+    this._pinPanelOpen = !this._pinPanelOpen;
+    const panel = document.getElementById('chat-pin-panel');
+    if (!panel) return;
+    if (this._pinPanelOpen) {
+      panel.style.display = 'flex';
+      this._loadPins();
+    } else {
+      panel.style.display = 'none';
+    }
+  },
+
+  async _loadPins() {
+    if (!this._activeConvId) return;
+    const list = document.getElementById('chat-pin-list');
+    if (!list) return;
+    try {
+      const pins = await API.get('api/chat/messages/pinned?conversation_id=' + encodeURIComponent(this._activeConvId));
+      if (!pins || pins.length === 0) {
+        list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--color-text-muted);font-size:0.8rem;">No pinned messages yet.</div>';
+        return;
+      }
+      let html = '';
+      for (const p of pins) {
+        let text;
+        try { text = await this._decryptMyMessage(p); }
+        catch (e) { text = '[Unable to decrypt]'; }
+        html += `<div class="chat-pin-item">
+          <div class="chat-pin-item__text">${this._esc(text)}</div>
+          <div class="chat-pin-item__meta">
+            <span>${this._formatTimeShort(p.created_at)}</span>
+            <button class="chat-pin-item__unpin" onclick="Chat.unpinMessage('${this._esc(p.id)}')">unpin</button>
+          </div>
+        </div>`;
+      }
+      list.innerHTML = html;
+    } catch (e) {
+      list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--color-text-muted);font-size:0.8rem;">Failed to load pins.</div>';
+    }
+  },
+
+  // ── EDIT ──
   startEdit(msgId) {
     if (!this._activeConvId) return;
     const msgs = this._messages[this._activeConvId];
@@ -964,13 +1076,11 @@ const Chat = {
     const el = row.querySelector('.chat-msg');
     if (!el) return;
     const textEl = el.querySelector('.chat-msg__text');
-    const sideEl = row.querySelector('.chat-msg-row__side');
-    if (sideEl) sideEl.style.display = 'none';
     const currentText = msg._plaintext || '';
     textEl.innerHTML = `<input type="text" class="chat-edit-input" id="chat-edit-input" value="${this._esc(currentText).replace(/"/g, '&quot;')}" autocomplete="off">
       <div class="chat-edit-btns">
-        <button class="chat-msg__action-btn" onclick="Chat.cancelEdit()">cancel</button>
-        <button class="chat-msg__action-btn" onclick="Chat.submitEdit('${this._esc(msgId)}')">save</button>
+        <button class="chat-msg__action-btn" onclick="Chat.cancelEdit()" style="font-size:0.65rem;background:none;border:none;color:var(--color-text-muted);cursor:pointer;">cancel</button>
+        <button class="chat-msg__action-btn" onclick="Chat.submitEdit('${this._esc(msgId)}')" style="font-size:0.65rem;background:none;border:none;color:var(--color-text-muted);cursor:pointer;">save</button>
       </div>`;
     const input = document.getElementById('chat-edit-input');
     if (input) {

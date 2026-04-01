@@ -75,6 +75,7 @@ async function initDB() {
     "CREATE TABLE IF NOT EXISTS hidden_conversations (user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, PRIMARY KEY (user_id, conversation_id))",
     "CREATE TABLE IF NOT EXISTS read_receipts (user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, last_read_at TEXT DEFAULT '', PRIMARY KEY (user_id, conversation_id))",
     "CREATE TABLE IF NOT EXISTS typing_status (user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, conversation_id))",
+    "CREATE TABLE IF NOT EXISTS pinned_messages (conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, pinned_by TEXT NOT NULL, pinned_at TEXT NOT NULL, PRIMARY KEY (conversation_id, message_id))",
   ];
   for (const m of migrations) {
     try { await pool.query(m); } catch(e) {}
@@ -766,6 +767,58 @@ app.post('/api/chat/read', requireAuth, async (req, res) => {
     await pool.query('INSERT INTO read_receipts (user_id, conversation_id, last_read_at) VALUES ($1,$2,$3) ON CONFLICT (user_id, conversation_id) DO UPDATE SET last_read_at = $3', [uid, convId, new Date().toISOString()]);
     ok(res);
   } catch (e) { ok(res); }
+});
+
+// ── PIN MESSAGES ──
+app.post('/api/chat/messages/pin', requireAuth, verifyCsrf, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const msgId = (req.body.message_id || '').trim();
+    if (!msgId) return fail(res, 'Missing message_id');
+    const { rows: mRows } = await pool.query('SELECT * FROM messages WHERE id = $1', [msgId]);
+    const msg = mRows[0];
+    if (!msg) return fail(res, 'Message not found', 404);
+    const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [msg.conversation_id]);
+    const conv = cRows[0];
+    if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
+    await pool.query('INSERT INTO pinned_messages (conversation_id, message_id, pinned_by, pinned_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [msg.conversation_id, msgId, uid, new Date().toISOString()]);
+    ok(res);
+  } catch (e) { fail(res, e.message, 500); }
+});
+
+app.post('/api/chat/messages/unpin', requireAuth, verifyCsrf, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const msgId = (req.body.message_id || '').trim();
+    if (!msgId) return fail(res, 'Missing message_id');
+    const { rows: mRows } = await pool.query('SELECT conversation_id FROM messages WHERE id = $1', [msgId]);
+    const msg = mRows[0];
+    if (!msg) return fail(res, 'Message not found', 404);
+    const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [msg.conversation_id]);
+    const conv = cRows[0];
+    if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
+    await pool.query('DELETE FROM pinned_messages WHERE conversation_id = $1 AND message_id = $2', [msg.conversation_id, msgId]);
+    ok(res);
+  } catch (e) { fail(res, e.message, 500); }
+});
+
+app.get('/api/chat/messages/pinned', requireAuth, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const convId = (req.query.conversation_id || '').trim();
+    if (!convId) return fail(res, 'Missing conversation_id');
+    const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [convId]);
+    const conv = cRows[0];
+    if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
+    const { rows } = await pool.query(`
+      SELECT m.id, m.sender_id, m.ciphertext_user1, m.ciphertext_user2, m.attachment, m.created_at, p.pinned_at
+      FROM pinned_messages p
+      JOIN messages m ON m.id = p.message_id
+      WHERE p.conversation_id = $1
+      ORDER BY p.pinned_at ASC
+    `, [convId]);
+    ok(res, rows);
+  } catch (e) { fail(res, e.message, 500); }
 });
 
 // ── HIDE CONVERSATION (one-sided delete) ──

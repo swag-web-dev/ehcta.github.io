@@ -511,6 +511,7 @@ const Chat = {
       reply_to: replyTo ? replyTo.id : '', attachment: '', _decryptedAttachment: attachment,
     });
     this.renderMessages(this._activeConvId);
+    this.scrollToBottom();
 
     try {
       const amUser1 = await this._amIUser1(meta.user1_id);
@@ -742,9 +743,14 @@ const Chat = {
   },
 
   // ── SCROLL ──
-  scrollToBottom() {
+  scrollToBottom(instant) {
     const c = document.getElementById('chat-messages');
-    if (c) c.scrollTop = c.scrollHeight;
+    if (!c) return;
+    if (instant) {
+      c.scrollTop = c.scrollHeight;
+    } else {
+      c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' });
+    }
     const btn = document.getElementById('chat-scroll-btn');
     if (btn) btn.style.display = 'none';
   },
@@ -1022,7 +1028,7 @@ const Chat = {
     }
 
     container.innerHTML = html;
-    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    if (wasAtBottom) this.scrollToBottom(true);
   },
 
   _getDayLabel(iso) {

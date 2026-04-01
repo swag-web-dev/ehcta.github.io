@@ -120,15 +120,10 @@
   <!-- APP VIEW -->
   <div id="app-view" style="display:none;">
 
-    <!-- Nav -->
-    <nav class="nav">
-      <div class="nav__logo" onclick="App.goToTab('#chat');" style="cursor:pointer;">EHCTA</div>
-      <button class="nav__hamburger" id="nav-hamburger" onclick="document.querySelector('.nav__tabs').classList.toggle('nav__tabs--open');document.querySelector('.nav__actions').classList.toggle('nav__actions--open')">&#9776;</button>
-      <div class="nav__tabs" id="nav-main-tabs">
-        <button class="nav__tab nav__tab--active" data-tab="#chat">Chat</button>
-      </div>
-      <!-- Settings sub-nav -->
-      <div class="nav__tabs" id="nav-settings-tabs" style="display:none;">
+    <!-- Settings nav (hidden, shown when in settings) -->
+    <nav class="nav" id="settings-nav" style="display:none;">
+      <div class="nav__logo" onclick="App.exitSettings();" style="cursor:pointer;">EHCTA</div>
+      <div class="nav__tabs" id="nav-settings-tabs">
         <button class="nav__tab nav__tab--active" data-settings-section="settings-profile-section">Profile</button>
         <button class="nav__tab" data-settings-section="settings-security-section">Security</button>
         <button class="nav__tab" data-settings-section="settings-appearance-section">Appearance</button>
@@ -136,20 +131,15 @@
         <button class="nav__tab" data-settings-section="settings-danger-section">Danger Zone</button>
         <button class="nav__tab" onclick="App.exitSettings()" style="color:var(--color-text-muted);">&larr; Back</button>
       </div>
-      <div class="nav__actions">
-        <span id="nav-display-name" style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:4px;">Anonymous</span>
-        <div class="btn-row">
-          <button id="logout-btn" class="btn btn--small" style="flex:3;">LOGOUT</button>
-          <button id="settings-nav-btn" class="btn btn--small" title="Settings" style="flex:1;font-size:1.1rem;padding:6px;">&#9881;</button>
-        </div>
-      </div>
     </nav>
+    <!-- Hidden tabs ref for JS -->
+    <div id="nav-main-tabs" style="display:none;"></div>
 
-    <main class="main">
+    <main class="main" id="main-content">
 
       <!-- CHAT -->
       <section class="tab-section tab-section--active" id="chat-section">
-        <div class="chat-layout" id="chat-layout">
+        <div class="chat-layout chat-layout--fullpage" id="chat-layout">
           <!-- Left: Conversations -->
           <div class="chat-sidebar" id="chat-sidebar">
             <div style="padding:16px;border-bottom:var(--border-muted);position:relative;">
@@ -158,6 +148,11 @@
               <div id="chat-search-results" style="display:none;"></div>
             </div>
             <div id="chat-conv-list" style="flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--color-text-muted) var(--color-surface);"></div>
+            <div style="padding:12px 16px;border-top:var(--border-muted);display:flex;gap:6px;align-items:center;">
+              <span id="nav-display-name" style="font-size:0.7rem;color:var(--color-text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Anonymous</span>
+              <button id="settings-nav-btn" class="btn btn--small" title="Settings" style="font-size:1rem;padding:4px 8px;">&#9881;</button>
+              <button id="logout-btn" class="btn btn--small" style="padding:4px 8px;font-size:0.65rem;">LOGOUT</button>
+            </div>
           </div>
           <!-- Right: Messages -->
           <div class="chat-main" id="chat-main">

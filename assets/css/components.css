@@ -761,6 +761,11 @@ textarea.input {
   overflow: hidden;
   min-height: 0;
 }
+.chat-layout--fullpage {
+  height: 100vh;
+  border: none;
+  border-right: var(--border);
+}
 .chat-sidebar {
   border-right: var(--border);
   display: flex;

@@ -51,17 +51,13 @@
     .chat-msg-row:hover .chat-msg__dots { opacity: 1; }
     .chat-msg__dots:hover { color: var(--color-text, #fff); }
     .chat-msg__menu {
-      position: absolute;
+      position: fixed;
       z-index: 55;
       background: var(--color-bg, #000);
       border: var(--border, 1px solid #fff);
       min-width: 120px;
       padding: 4px 0;
-      bottom: 100%;
-      margin-bottom: 4px;
     }
-    .chat-msg-row--me .chat-msg__menu { right: 0; }
-    .chat-msg-row--them .chat-msg__menu { left: 0; }
     .chat-msg__menu-item {
       display: block; width: 100%;
       background: none; border: none; color: var(--color-text, #fff);
@@ -1083,12 +1079,13 @@ const Chat = {
     this._openMenuId = msgId;
     const row = document.querySelector(`[data-msg-id="${msgId}"]`);
     if (!row) return;
+    const dotsBtn = row.querySelector('.chat-msg__dots');
     const msgs = this._messages[this._activeConvId] || [];
     const msg = msgs.find(m => m.id === msgId);
     const isMine = msg && (msg._isMine || (this._myUserId && msg.sender_id === this._myUserId));
 
     const attachStr = msg ? (msg._decryptedAttachment || msg.attachment || '') : '';
-    const hasAttach = attachStr.length > 2; // not empty or '[]'
+    const hasAttach = attachStr.length > 2;
 
     let menuHtml = '<div class="chat-msg__menu">';
     menuHtml += `<button class="chat-msg__menu-item" onclick="Chat.setReply('${this._esc(msgId)}');Chat._closeMenu()">Reply</button>`;
@@ -1103,15 +1100,31 @@ const Chat = {
     menuHtml += '</div>';
 
     const menuEl = document.createElement('div');
-    menuEl.id = 'chat-active-menu';
     menuEl.innerHTML = menuHtml;
-    row.appendChild(menuEl.firstElementChild);
+    const menu = menuEl.firstElementChild;
+    document.body.appendChild(menu);
+
+    // Position: to the left of the dots, at the same level
+    requestAnimationFrame(() => {
+      const dotsRect = dotsBtn ? dotsBtn.getBoundingClientRect() : row.getBoundingClientRect();
+      const menuH = menu.offsetHeight;
+      const menuW = menu.offsetWidth;
+      let left = dotsRect.left - menuW - 4;
+      if (left < 0) left = dotsRect.right + 4;
+      let top = dotsRect.top;
+      // If not enough room below, align bottom of menu to dots level
+      if (top + menuH > window.innerHeight) {
+        top = dotsRect.bottom - menuH;
+      }
+      if (top < 0) top = 4;
+      menu.style.left = left + 'px';
+      menu.style.top = top + 'px';
+    });
   },
 
   _closeMenu() {
     this._openMenuId = null;
-    const existing = document.querySelector('.chat-msg__menu');
-    if (existing) existing.remove();
+    document.querySelectorAll('.chat-msg__menu').forEach(el => el.remove());
   },
 
   // ── PIN ──

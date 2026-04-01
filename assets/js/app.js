@@ -50,6 +50,9 @@ const App = {
   showApp() {
     document.getElementById('login-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
+    document.getElementById('main-content').style.marginLeft = '0';
+    document.getElementById('main-content').style.padding = '0';
+    document.getElementById('main-content').style.maxWidth = '100%';
     resetInactivity();
 
     if (window.Lenis) new Lenis({ autoRaf: true });
@@ -127,9 +130,12 @@ const App = {
   },
 
   enterSettings() {
-    this.goToTab('#settings');
-    document.getElementById('nav-main-tabs').style.display = 'none';
-    document.getElementById('nav-settings-tabs').style.display = 'flex';
+    // Show settings nav, hide chat, show settings section
+    document.getElementById('settings-nav').style.display = 'flex';
+    document.getElementById('chat-section').style.display = 'none';
+    document.getElementById('settings-section').classList.add('tab-section--active');
+    document.getElementById('main-content').style.marginLeft = '220px';
+    document.getElementById('main-content').style.padding = '48px 48px';
     this.showSettingsSection('settings-profile-section');
     document.querySelectorAll('#nav-settings-tabs .nav__tab').forEach(b => b.classList.remove('nav__tab--active'));
     document.querySelector('#nav-settings-tabs .nav__tab[data-settings-section="settings-profile-section"]').classList.add('nav__tab--active');
@@ -137,10 +143,13 @@ const App = {
   },
 
   exitSettings() {
-    document.getElementById('nav-main-tabs').style.display = 'flex';
-    document.getElementById('nav-settings-tabs').style.display = 'none';
-    document.querySelectorAll('.settings-sub').forEach(s => s.style.display = 'block');
-    this.goToTab('#chat');
+    // Hide settings nav, show chat
+    document.getElementById('settings-nav').style.display = 'none';
+    document.getElementById('chat-section').style.display = 'block';
+    document.getElementById('settings-section').classList.remove('tab-section--active');
+    document.getElementById('main-content').style.marginLeft = '0';
+    document.getElementById('main-content').style.padding = '0';
+    Chat.open();
   },
 
   showSettingsSection(id) {

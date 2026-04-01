@@ -758,12 +758,15 @@ textarea.input {
   gap: 0;
   height: calc(100vh - 120px);
   border: var(--border);
+  overflow: hidden;
+  min-height: 0;
 }
 .chat-sidebar {
   border-right: var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 .chat-main {
   display: flex;
@@ -771,6 +774,24 @@ textarea.input {
   overflow: hidden;
   position: relative;
   min-height: 0;
+}
+.chat-messages-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+.chat-messages-wrap #chat-messages {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-text-muted) var(--color-surface);
 }
 
 @media (max-width: 700px) {

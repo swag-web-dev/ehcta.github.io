@@ -15,8 +15,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "better-sqlite3": "^12.8.0",
     "crypto-js": "^4.2.0",
+    "pg": "^8.13.1",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
     "otpauth": "^9.5.0",

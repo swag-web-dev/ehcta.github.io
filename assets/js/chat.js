@@ -297,6 +297,8 @@ const Chat = {
         }, { passive: false });
       }
       msgContainer.addEventListener('scroll', () => {
+        if (this._openMenuId) this._closeMenu();
+        if (this._pinPanelOpen) { this._pinPanelOpen = false; const p = document.getElementById('chat-pin-panel'); if (p) p.style.display = 'none'; }
         const btn = document.getElementById('chat-scroll-btn');
         if (!btn) return;
         const atBottom = msgContainer.scrollHeight - msgContainer.scrollTop - msgContainer.clientHeight < 100;

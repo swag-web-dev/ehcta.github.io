@@ -220,6 +220,7 @@ const Chat = {
   _emojiOpen: false,
   _typingTimer: null,
   _lastTypingSent: 0,
+  _activeTab: 'messages',
 
   async init() {
     if (this._initialized) return;
@@ -772,49 +773,65 @@ const Chat = {
   // ── RENDER CONVERSATIONS ──
   _lastConvHtml: '',
 
+  switchTab(tab) {
+    this._activeTab = tab;
+    this._lastConvHtml = '';
+    this.renderConversations();
+  },
+
   renderConversations() {
     const list = document.getElementById('chat-conv-list');
     if (!list) return;
 
-    if (this._conversations.length === 0) {
-      list.innerHTML = '<div style="padding:24px 16px;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">No conversations yet.<br>Search for a user above.</div>';
-      this._lastConvHtml = '';
-      return;
-    }
-
     const requests = this._conversations.filter(c => c.is_request);
     const pending = this._conversations.filter(c => c.is_pending);
     const accepted = this._conversations.filter(c => c.status === 'accepted');
+    const requestCount = requests.length;
+
+    // Render tabs
+    let tabsEl = document.getElementById('chat-sidebar-tabs');
+    if (!tabsEl) {
+      tabsEl = document.createElement('div');
+      tabsEl.id = 'chat-sidebar-tabs';
+      tabsEl.className = 'chat-sidebar-tabs';
+      list.parentElement.insertBefore(tabsEl, list);
+    }
+    tabsEl.innerHTML = `<button class="chat-sidebar-tab ${this._activeTab === 'messages' ? 'chat-sidebar-tab--active' : ''}" onclick="Chat.switchTab('messages')">Messages</button><button class="chat-sidebar-tab ${this._activeTab === 'requests' ? 'chat-sidebar-tab--active' : ''}" onclick="Chat.switchTab('requests')">Requests${requestCount > 0 ? '<span class="chat-sidebar-tab__badge">' + requestCount + '</span>' : ''}</button>`;
 
     let html = '';
 
-    if (requests.length > 0) {
-      html += '<div style="padding:8px 16px;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);border-bottom:var(--border-muted);">Requests (' + requests.length + ')</div>';
-      html += requests.map(c => `
-        <div class="chat-conv-item" style="background:rgba(255,255,255,0.03);" onclick="Chat._openRequest('${this._esc(c.id)}', '${this._esc(c.other_user_uid)}')">
-          <div class="chat-conv-item__name">${this._esc(c.other_user_name || 'Unknown')}</div>
-          <div class="chat-conv-item__uid">@${this._esc(c.other_user_uid || '???')}</div>
-          <div style="display:flex;gap:4px;margin-top:8px;">
-            <button class="btn btn--small btn--primary" style="font-size:0.65rem;padding:3px 8px;" onclick="event.stopPropagation();Chat.acceptRequest('${this._esc(c.id)}')">ACCEPT</button>
-            <button class="btn btn--small" style="font-size:0.65rem;padding:3px 8px;" onclick="event.stopPropagation();Chat.denyRequest('${this._esc(c.id)}')">DENY</button>
-            <button class="btn btn--small btn--danger" style="font-size:0.65rem;padding:3px 8px;" onclick="event.stopPropagation();Chat.blockUser('${this._esc(c.id)}')">BLOCK</button>
+    if (this._activeTab === 'messages') {
+      // Messages tab: accepted + pending (sent by me)
+      if (pending.length > 0) {
+        html += '<div style="padding:8px 16px;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);border-bottom:var(--border-muted);">Pending</div>';
+        html += pending.map(c => this._renderConvItem(c, '#ff9f4a', 'Waiting for response')).join('');
+      }
+
+      if (accepted.length > 0) {
+        html += accepted.map(c => this._renderConvItem(c)).join('');
+      }
+
+      if (pending.length === 0 && accepted.length === 0) {
+        html = '<div style="padding:24px 16px;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">No conversations yet.<br>Search for a user above.</div>';
+      }
+    } else {
+      // Requests tab: incoming requests
+      if (requests.length > 0) {
+        html += requests.map(c => `
+          <div class="chat-conv-item" style="background:rgba(255,255,255,0.03);" onclick="Chat._openRequest('${this._esc(c.id)}', '${this._esc(c.other_user_uid)}')">
+            <div class="chat-conv-item__name">${this._esc(c.other_user_name || 'Unknown')}</div>
+            <div class="chat-conv-item__uid">@${this._esc(c.other_user_uid || '???')}</div>
+            <div style="display:flex;gap:4px;margin-top:8px;">
+              <button class="btn btn--small btn--primary" style="font-size:0.65rem;padding:3px 8px;" onclick="event.stopPropagation();Chat.acceptRequest('${this._esc(c.id)}')">ACCEPT</button>
+              <button class="btn btn--small" style="font-size:0.65rem;padding:3px 8px;" onclick="event.stopPropagation();Chat.denyRequest('${this._esc(c.id)}')">DENY</button>
+              <button class="btn btn--small btn--danger" style="font-size:0.65rem;padding:3px 8px;" onclick="event.stopPropagation();Chat.blockUser('${this._esc(c.id)}')">BLOCK</button>
+            </div>
           </div>
-        </div>
-      `).join('');
+        `).join('');
+      } else {
+        html = '<div style="padding:24px 16px;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">No message requests.</div>';
+      }
     }
-
-    if (pending.length > 0) {
-      html += '<div style="padding:8px 16px;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);border-bottom:var(--border-muted);">Pending</div>';
-      html += pending.map(c => this._renderConvItem(c, '#ff9f4a', 'Waiting for response')).join('');
-    }
-
-    if (accepted.length > 0) {
-      if (requests.length > 0 || pending.length > 0)
-        html += '<div style="padding:8px 16px;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);border-bottom:var(--border-muted);">Messages</div>';
-      html += accepted.map(c => this._renderConvItem(c)).join('');
-    }
-
-    html = html || '<div style="padding:24px 16px;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">No conversations yet.</div>';
 
     // Only replace DOM if content actually changed
     if (html !== this._lastConvHtml) {

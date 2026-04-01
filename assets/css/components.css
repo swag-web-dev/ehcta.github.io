@@ -822,6 +822,51 @@ textarea.input {
   }
 }
 
+/* ── CHAT SIDEBAR TABS ── */
+.chat-sidebar-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: var(--border-muted);
+  flex-shrink: 0;
+}
+.chat-sidebar-tab {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  position: relative;
+}
+.chat-sidebar-tab:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover, rgba(255,255,255,0.03));
+}
+.chat-sidebar-tab--active {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
+}
+.chat-sidebar-tab__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent, #fff);
+  color: var(--color-bg, #000);
+  font-size: 0.6rem;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 /* ── EMOJI PICKER ── */
 .emoji-picker {
   background: var(--color-bg, #000);

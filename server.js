@@ -205,7 +205,7 @@ app.post('/api/auth/register', async (req, res) => {
     ok(res, { seed_phrase: phrase, csrf_token: req.session.csrfToken, salt });
   } catch (e) {
     console.error('Register error:', e);
-    fail(res, e.message || 'Registration failed', 500);
+    fail(res, 'Internal error', 500);
   }
 });
 
@@ -251,11 +251,17 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (needsPin) {
       if (!pin) return fail(res, 'PIN is required', 401);
-      const pinHash = crypto.createHash('sha256').update(pin).digest('hex');
+      const pinHash = crypto.pbkdf2Sync(pin, user.salt, 100000, 64, 'sha512').toString('hex');
       if (pinHash !== user.pin_hash) {
         const failures = (user.pin_failures || 0) + 1;
         await pool.query('UPDATE users SET pin_failures = $1 WHERE id = $2', [failures, userId]);
         if (failures >= 3) {
+          // Actually wipe: hide all conversations and clear chat keys
+          const { rows: convRows } = await pool.query('SELECT id FROM conversations WHERE user1_id = $1 OR user2_id = $1', [userId]);
+          for (const conv of convRows) {
+            await pool.query('INSERT INTO hidden_conversations (user_id, conversation_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, conv.id]);
+          }
+          await pool.query("UPDATE users SET chat_public_key = '', chat_private_key_enc = '', chat_private_key_iv = '', pin_failures = 0, pin_hash = '' WHERE id = $1", [userId]);
           await auditLog(userId, 'pin_wipe', 'Data wiped after 3 failed PIN attempts');
           return fail(res, 'Too many failed PIN attempts. Account data wiped.', 401);
         }
@@ -286,7 +292,7 @@ app.post('/api/auth/login', async (req, res) => {
     ok(res, { csrf_token: req.session.csrfToken, salt: user.salt, has_pin: !!user.pin_hash });
   } catch (e) {
     console.error('Login error:', e);
-    fail(res, e.message || 'Login failed', 500);
+    fail(res, 'Internal error', 500);
   }
 });
 
@@ -330,7 +336,7 @@ app.get('/api/settings/get', requireAuth, async (req, res) => {
       has_pin: !!(user.pin_hash),
       has_totp: !!(user.totp_secret),
     });
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.get('/api/settings/session', requireAuth, async (req, res) => {
@@ -342,7 +348,7 @@ app.get('/api/settings/session', requireAuth, async (req, res) => {
       ip: req.ip || req.socket?.remoteAddress || 'unknown',
       user_agent: req.headers['user-agent'] || 'unknown',
     });
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.get('/api/settings/audit', requireAuth, async (req, res) => {
@@ -350,7 +356,7 @@ app.get('/api/settings/audit', requireAuth, async (req, res) => {
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     const { rows } = await pool.query('SELECT action, detail, created_at FROM audit_log WHERE user_id = $1 AND created_at > $2 ORDER BY created_at DESC', [req.session.userId, threeDaysAgo]);
     ok(res, rows);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/update', requireAuth, verifyCsrf, async (req, res) => {
@@ -366,7 +372,7 @@ app.post('/api/settings/update', requireAuth, verifyCsrf, async (req, res) => {
       await pool.query('UPDATE users SET settings = $1 WHERE id = $2', [JSON.stringify(merged), uid]);
     }
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/change-uid', requireAuth, verifyCsrf, async (req, res) => {
@@ -380,7 +386,7 @@ app.post('/api/settings/change-uid', requireAuth, verifyCsrf, async (req, res) =
     await pool.query('UPDATE users SET unique_id = $1 WHERE id = $2', [newId, uid]);
     await auditLog(uid, 'change_uid', '@' + newId);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/set-pin', requireAuth, verifyCsrf, async (req, res) => {
@@ -388,26 +394,27 @@ app.post('/api/settings/set-pin', requireAuth, verifyCsrf, async (req, res) => {
     const uid = req.session.userId;
     const pin = (req.body.pin || '').trim();
     if (!pin || pin.length < 4 || pin.length > 6) return fail(res, 'PIN must be 4-6 characters');
-    const pinHash = crypto.createHash('sha256').update(pin).digest('hex');
+    const { rows: userRows } = await pool.query('SELECT salt FROM users WHERE id = $1', [uid]);
+    const pinHash = crypto.pbkdf2Sync(pin, userRows[0].salt, 100000, 64, 'sha512').toString('hex');
     await pool.query('UPDATE users SET pin_hash = $1 WHERE id = $2', [pinHash, uid]);
     await auditLog(uid, 'pin_set', 'PIN enabled');
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/remove-pin', requireAuth, verifyCsrf, async (req, res) => {
   try {
     const uid = req.session.userId;
     const pin = (req.body.pin || '').trim();
-    const { rows } = await pool.query('SELECT pin_hash FROM users WHERE id = $1', [uid]);
+    const { rows } = await pool.query('SELECT pin_hash, salt FROM users WHERE id = $1', [uid]);
     if (rows[0] && rows[0].pin_hash) {
-      const pinHash = crypto.createHash('sha256').update(pin).digest('hex');
+      const pinHash = crypto.pbkdf2Sync(pin, rows[0].salt, 100000, 64, 'sha512').toString('hex');
       if (pinHash !== rows[0].pin_hash) return fail(res, 'Wrong PIN', 403);
     }
     await pool.query("UPDATE users SET pin_hash = '' WHERE id = $1", [uid]);
     await auditLog(uid, 'pin_remove', 'PIN disabled');
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/totp-setup', requireAuth, verifyCsrf, async (req, res) => {
@@ -417,7 +424,7 @@ app.post('/api/settings/totp-setup', requireAuth, verifyCsrf, async (req, res) =
     const totp = new TOTP({ issuer: 'EHCTA', label: rows[0].display_name || 'User', secret, digits: 6, period: 30 });
     req.session.pendingTotpSecret = secret.base32;
     ok(res, { secret: secret.base32, uri: totp.toString() });
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/totp-confirm', requireAuth, verifyCsrf, async (req, res) => {
@@ -435,7 +442,7 @@ app.post('/api/settings/totp-confirm', requireAuth, verifyCsrf, async (req, res)
     } else {
       fail(res, 'Invalid code. Try again.');
     }
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/totp-disable', requireAuth, verifyCsrf, async (req, res) => {
@@ -452,7 +459,7 @@ app.post('/api/settings/totp-disable', requireAuth, verifyCsrf, async (req, res)
     } else {
       fail(res, 'Invalid code');
     }
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/regen-seed', requireAuth, verifyCsrf, async (req, res) => {
@@ -489,7 +496,7 @@ app.post('/api/settings/regen-seed', requireAuth, verifyCsrf, async (req, res) =
     req.session.userId = newUserId;
     await auditLog(newUserId, 'regen_seed', 'Seed phrase regenerated');
     ok(res, { seed_phrase: newPhrase, salt: newSalt });
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/settings/delete-account', requireAuth, verifyCsrf, async (req, res) => {
@@ -497,7 +504,7 @@ app.post('/api/settings/delete-account', requireAuth, verifyCsrf, async (req, re
     await auditLog(req.session.userId, 'delete_account', 'Account deleted');
     await pool.query('DELETE FROM users WHERE id = $1', [req.session.userId]);
     req.session.destroy(() => ok(res));
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 // ── CHAT API ──
@@ -508,7 +515,7 @@ app.post('/api/chat/keys/save', requireAuth, verifyCsrf, async (req, res) => {
     await pool.query('UPDATE users SET chat_public_key = $1, chat_private_key_enc = $2, chat_private_key_iv = $3 WHERE id = $4',
       [public_key, private_key_enc, private_key_iv, req.session.userId]);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.get('/api/chat/keys/get', requireAuth, async (req, res) => {
@@ -516,7 +523,7 @@ app.get('/api/chat/keys/get', requireAuth, async (req, res) => {
     const { rows } = await pool.query('SELECT chat_public_key, chat_private_key_enc, chat_private_key_iv FROM users WHERE id = $1', [req.session.userId]);
     const r = rows[0];
     ok(res, { chat_public_key: r.chat_public_key || '', chat_private_key_enc: r.chat_private_key_enc || '', chat_private_key_iv: r.chat_private_key_iv || '' });
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.get('/api/chat/search', requireAuth, async (req, res) => {
@@ -525,7 +532,7 @@ app.get('/api/chat/search', requireAuth, async (req, res) => {
     if (!q) return ok(res, []);
     const { rows } = await pool.query("SELECT unique_id, display_name, chat_public_key FROM users WHERE unique_id LIKE $1 AND id != $2 LIMIT 10", [q + '%', req.session.userId]);
     ok(res, rows.map(r => ({ unique_id: r.unique_id, display_name: r.display_name, has_chat: !!r.chat_public_key })));
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.get('/api/chat/conversations', requireAuth, async (req, res) => {
@@ -554,7 +561,7 @@ app.get('/api/chat/conversations', requireAuth, async (req, res) => {
       is_request: r.status === 'pending' && r.initiated_by !== uid,
       is_pending: r.status === 'pending' && r.initiated_by === uid,
     })));
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/conversations/start', requireAuth, verifyCsrf, async (req, res) => {
@@ -582,7 +589,7 @@ app.post('/api/chat/conversations/start', requireAuth, verifyCsrf, async (req, r
 
     const { rows: meRows } = await pool.query('SELECT chat_public_key FROM users WHERE id = $1', [uid]);
     ok(res, { conversation_id: conv.id, status: conv.status, other_public_key: target.chat_public_key || '', my_public_key: meRows[0].chat_public_key || '', user1_id: u1, user2_id: u2 });
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/conversations/accept', requireAuth, verifyCsrf, async (req, res) => {
@@ -596,7 +603,7 @@ app.post('/api/chat/conversations/accept', requireAuth, verifyCsrf, async (req, 
     if (conv.initiated_by === uid) return fail(res, 'You initiated this conversation');
     await pool.query('UPDATE conversations SET status = $1 WHERE id = $2', ['accepted', convId]);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/conversations/deny', requireAuth, verifyCsrf, async (req, res) => {
@@ -610,7 +617,7 @@ app.post('/api/chat/conversations/deny', requireAuth, verifyCsrf, async (req, re
     await pool.query('DELETE FROM messages WHERE conversation_id = $1', [convId]);
     await pool.query('DELETE FROM conversations WHERE id = $1', [convId]);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/conversations/block', requireAuth, verifyCsrf, async (req, res) => {
@@ -627,7 +634,7 @@ app.post('/api/chat/conversations/block', requireAuth, verifyCsrf, async (req, r
     await pool.query('DELETE FROM conversations WHERE id = $1', [convId]);
     await auditLog(uid, 'chat_block', 'Blocked user');
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.get('/api/chat/messages', requireAuth, async (req, res) => {
@@ -651,7 +658,7 @@ app.get('/api/chat/messages', requireAuth, async (req, res) => {
       rows = r.rows;
     }
     ok(res, rows);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) => {
@@ -671,7 +678,7 @@ app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) =>
     await pool.query('INSERT INTO messages (id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
       [id, conversation_id, uid, ciphertext_user1, ciphertext_user2, reply_to || '', attachment || '', created_at]);
     ok(res, { id, created_at });
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/messages/delete', requireAuth, verifyCsrf, async (req, res) => {
@@ -692,7 +699,7 @@ app.post('/api/chat/messages/delete', requireAuth, verifyCsrf, async (req, res) 
 
     await pool.query('DELETE FROM messages WHERE id = $1', [msgId]);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/messages/edit', requireAuth, verifyCsrf, async (req, res) => {
@@ -713,7 +720,7 @@ app.post('/api/chat/messages/edit', requireAuth, verifyCsrf, async (req, res) =>
 
     await pool.query('UPDATE messages SET ciphertext_user1 = $1, ciphertext_user2 = $2 WHERE id = $3', [ciphertext_user1, ciphertext_user2, message_id]);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.get('/api/chat/messages/status', requireAuth, async (req, res) => {
@@ -733,7 +740,7 @@ app.get('/api/chat/messages/status', requireAuth, async (req, res) => {
       last_id: last ? last.id : null,
       last_ct1: last ? last.ciphertext_user1.slice(0, 16) : null,
     });
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 // ── TYPING ──
@@ -783,7 +790,7 @@ app.post('/api/chat/messages/pin', requireAuth, verifyCsrf, async (req, res) => 
     if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
     await pool.query('INSERT INTO pinned_messages (conversation_id, message_id, pinned_by, pinned_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [msg.conversation_id, msgId, uid, new Date().toISOString()]);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/messages/unpin', requireAuth, verifyCsrf, async (req, res) => {
@@ -799,7 +806,7 @@ app.post('/api/chat/messages/unpin', requireAuth, verifyCsrf, async (req, res) =
     if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
     await pool.query('DELETE FROM pinned_messages WHERE conversation_id = $1 AND message_id = $2', [msg.conversation_id, msgId]);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.get('/api/chat/messages/pinned', requireAuth, async (req, res) => {
@@ -818,7 +825,7 @@ app.get('/api/chat/messages/pinned', requireAuth, async (req, res) => {
       ORDER BY p.pinned_at ASC
     `, [convId]);
     ok(res, rows);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 // ── HIDE CONVERSATION (one-sided delete) ──
@@ -829,7 +836,7 @@ app.post('/api/chat/conversations/hide', requireAuth, verifyCsrf, async (req, re
     if (!convId) return fail(res, 'Missing conversation_id');
     await pool.query('INSERT INTO hidden_conversations (user_id, conversation_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [uid, convId]);
     ok(res);
-  } catch (e) { fail(res, e.message, 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 // ── SERVE FRONTEND ──
@@ -837,7 +844,7 @@ app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); }
 
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+  res.status(500).json({ success: false, error: 'Internal error' });
 });
 
 // ── START ──

@@ -1,8 +1,4 @@
 /* ── SCROLLBAR THEME ── */
-#audit-log-list::-webkit-scrollbar { width: 6px; }
-#audit-log-list::-webkit-scrollbar-track { background: var(--color-surface); }
-#audit-log-list::-webkit-scrollbar-thumb { background: var(--color-text-muted); }
-#audit-log-list::-webkit-scrollbar-thumb:hover { background: var(--color-text); }
 
 /* ── PRELOADER ── */
 .preloader {
@@ -832,12 +828,7 @@ textarea.input {
   left: 0;
   right: 0;
   bottom: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 16px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-text-muted) var(--color-surface);
-  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 700px) {
@@ -928,10 +919,6 @@ textarea.input {
 }
 .emoji-picker__content {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-text-muted) var(--color-surface);
 }
 .emoji-picker__tabs {
   display: flex;

@@ -188,6 +188,17 @@
       cursor: pointer; z-index: 10000; line-height: 1;
     }
     .chat-lightbox__close:hover { color: #e74c3c; }
+    .chat-scroll-area {
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-text-muted, #666) var(--color-surface, #0a0a0a);
+      -webkit-overflow-scrolling: touch;
+    }
+    .chat-scroll-area::-webkit-scrollbar { width: 6px; }
+    .chat-scroll-area::-webkit-scrollbar-track { background: var(--color-surface, #0a0a0a); }
+    .chat-scroll-area::-webkit-scrollbar-thumb { background: var(--color-text-muted, #666); }
+    .chat-scroll-area::-webkit-scrollbar-thumb:hover { background: var(--color-text, #fff); }
     .chat-profile-tab {
       background: none; border: none; border-bottom: 2px solid transparent;
       color: var(--color-text-muted, #888); font-size: 0.85rem; font-family: var(--font-body, sans-serif);
@@ -654,7 +665,7 @@ const Chat = {
     const cats = Object.keys(EMOJI_CATEGORIES);
     let html = '<div class="emoji-picker"><div class="emoji-picker__tabs">';
     html += cats.map((c, i) => `<button class="emoji-picker__tab ${i===0?'emoji-picker__tab--active':''}" onclick="Chat._showEmojiCat(${i})">${EMOJI_CATEGORIES[c][0]}</button>`).join('');
-    html += '</div><div class="emoji-picker__content">';
+    html += '</div><div class="emoji-picker__content chat-scroll-area">';
     cats.forEach((c, i) => {
       html += `<div class="emoji-picker__grid" id="emoji-cat-${i}" style="${i>0?'display:none':''}">`;
       html += EMOJI_CATEGORIES[c].map(e => `<button class="emoji-picker__item" onclick="Chat._insertEmoji('${e}')">${e}</button>`).join('');
@@ -1368,7 +1379,7 @@ const Chat = {
         <button class="chat-profile-tab" onclick="Chat._switchProfileTab('files')">Files</button>
         <button class="chat-profile-tab" onclick="Chat._switchProfileTab('search')" style="margin-left:auto;" title="Search messages">&#128269;</button>
       </div>
-      <div id="chat-profile-content" style="flex:1;overflow-y:auto;padding:16px 24px;min-height:200px;scrollbar-width:thin;scrollbar-color:var(--color-text-muted) var(--color-surface);"></div>
+      <div id="chat-profile-content" class="chat-scroll-area" style="flex:1;padding:16px 24px;min-height:200px;"></div>
       <div style="border-top:var(--border-muted);padding:12px 24px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
         <div>
           <div style="font-size:0.8rem;font-weight:500;">Disappearing Messages</div>

@@ -741,6 +741,14 @@ app.post('/api/chat/conversations/start', requireAuth, verifyCsrf, async (req, r
       const convId = genId();
       await pool.query('INSERT INTO conversations (id, user1_id, user2_id, status, initiated_by, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [convId, u1, u2, 'pending', uid, new Date().toISOString()]);
       conv = { id: convId, status: 'pending' };
+    } else {
+      // Unhide for both users so the request is visible again
+      await pool.query('DELETE FROM hidden_conversations WHERE conversation_id = $1', [conv.id]);
+      // If it was previously accepted/declined, reset to pending with new initiator
+      if (conv.status !== 'pending') {
+        await pool.query('UPDATE conversations SET status = $1, initiated_by = $2 WHERE id = $3', ['pending', uid, conv.id]);
+        conv.status = 'pending';
+      }
     }
 
     const { rows: meRows } = await pool.query('SELECT chat_public_key FROM users WHERE id = $1', [uid]);

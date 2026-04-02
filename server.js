@@ -693,6 +693,11 @@ app.get('/api/chat/search', requireAuth, async (req, res) => {
 app.get('/api/chat/conversations', requireAuth, async (req, res) => {
   try {
     const uid = req.session.userId;
+    // DEBUG: check all conversations and hidden state for this user
+    const { rows: allConvs } = await pool.query('SELECT id, user1_id, user2_id, status, initiated_by FROM conversations WHERE user1_id = $1 OR user2_id = $1', [uid]);
+    const { rows: hiddenRows } = await pool.query('SELECT conversation_id FROM hidden_conversations WHERE user_id = $1', [uid]);
+    console.log('[DEBUG] GET /conversations uid:', uid, 'all_convs:', allConvs.length, allConvs.map(c => ({ id: c.id.slice(0,8), status: c.status, initiated_by: c.initiated_by?.slice(0,8) })), 'hidden:', hiddenRows.map(h => h.conversation_id.slice(0,8)));
+
     const { rows } = await pool.query(`
       SELECT c.id, c.user1_id, c.user2_id, c.status, c.initiated_by, c.created_at, c.default_ttl,
         CASE WHEN c.user1_id = $1 THEN u2.display_name ELSE u1.display_name END AS other_user_name,
@@ -707,6 +712,7 @@ app.get('/api/chat/conversations', requireAuth, async (req, res) => {
         AND NOT EXISTS (SELECT 1 FROM hidden_conversations hc WHERE hc.user_id = $1 AND hc.conversation_id = c.id)
       ORDER BY last_message_at DESC NULLS LAST, c.created_at DESC
     `, [uid]);
+    console.log('[DEBUG] GET /conversations filtered results:', rows.length, rows.map(r => ({ id: r.id.slice(0,8), status: r.status, is_req: r.status === 'pending' && r.initiated_by !== uid })));
     ok(res, rows.map(r => ({
       id: r.id, other_user_name: r.other_user_name, other_user_uid: r.other_user_uid,
       last_message_at: r.last_message_at || r.created_at,
@@ -724,9 +730,11 @@ app.post('/api/chat/conversations/start', requireAuth, verifyCsrf, async (req, r
   try {
     const uid = req.session.userId;
     const targetUid = (req.body.unique_id || '').trim();
+    console.log('[DEBUG] POST /start uid:', uid?.slice(0,8), 'targetUid:', targetUid);
     if (!targetUid) return fail(res, 'Missing unique_id');
     const { rows: tRows } = await pool.query('SELECT id, chat_public_key FROM users WHERE unique_id = $1', [targetUid]);
     const target = tRows[0];
+    console.log('[DEBUG] POST /start target found:', !!target, target ? 'id:' + target.id.slice(0,8) : '');
     if (!target) return fail(res, 'User not found', 404);
     if (target.id === uid) return fail(res, 'Cannot chat with yourself');
 
@@ -751,9 +759,10 @@ app.post('/api/chat/conversations/start', requireAuth, verifyCsrf, async (req, r
       }
     }
 
+    console.log('[DEBUG] POST /start conv:', conv.id?.slice(0,8), 'status:', conv.status, 'u1:', u1.slice(0,8), 'u2:', u2.slice(0,8));
     const { rows: meRows } = await pool.query('SELECT chat_public_key FROM users WHERE id = $1', [uid]);
     ok(res, { conversation_id: conv.id, status: conv.status, other_public_key: target.chat_public_key || '', my_public_key: meRows[0].chat_public_key || '', user1_id: u1, user2_id: u2 });
-  } catch (e) { fail(res, 'Internal error', 500); }
+  } catch (e) { console.log('[DEBUG] POST /start ERROR:', e.message); fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/conversations/accept', requireAuth, verifyCsrf, async (req, res) => {

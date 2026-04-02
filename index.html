@@ -236,7 +236,7 @@
               <input type="text" id="settings-timezone" class="input" style="width:200px;padding:6px 10px;font-size:0.8rem;" placeholder="Search timezone..." autocomplete="off" readonly>
             </div>
             <div style="font-size:0.7rem;color:var(--color-text-muted);">Current time: <span id="settings-current-time" style="color:var(--color-text);"></span></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;padding:8px 0;border-top:var(--border-muted);margin-top:8px;font-size:0.7rem;">
+            <div class="session-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;padding:8px 0;border-top:var(--border-muted);margin-top:8px;font-size:0.7rem;">
               <div><span style="color:var(--color-text-muted);">Login:</span> <span id="session-login-time">--</span></div>
               <div><span style="color:var(--color-text-muted);">Duration:</span> <span id="session-duration">--</span></div>
               <div><span style="color:var(--color-text-muted);">IP:</span> <span id="session-ip" style="color:var(--color-text-muted);">--</span></div>
@@ -249,27 +249,54 @@
         <div class="settings-sub" id="settings-security-section">
           <div class="card" style="padding:16px;">
             <h2 style="font-size:1rem;margin-bottom:12px;padding-bottom:8px;border-bottom:var(--border-muted);">Security</h2>
-            <div id="pin-status-off" style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
-              <div><span style="font-size:0.85rem;font-weight:500;">PIN</span> <span style="font-size:0.7rem;color:var(--color-text-muted);margin-left:6px;">Disabled</span></div>
-              <button id="pin-enable-btn" class="btn btn--small btn--primary">ENABLE</button>
+
+            <!-- PIN row -->
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:var(--border-muted);">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:0.85rem;font-weight:500;">PIN</span>
+                <span id="pin-status-text" style="font-size:0.7rem;color:var(--color-text-muted);">Disabled</span>
+              </div>
+              <div>
+                <button id="pin-enable-btn" class="btn btn--small btn--primary">ENABLE</button>
+                <button id="pin-disable-btn" class="btn btn--small btn--danger" style="display:none;">DISABLE</button>
+              </div>
             </div>
-            <div id="pin-status-on" style="display:none;display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
-              <div><span style="font-size:0.85rem;font-weight:500;">PIN</span> <span style="font-size:0.7rem;color:var(--color-text);margin-left:6px;">Enabled</span></div>
-              <button id="pin-disable-btn" class="btn btn--small btn--danger">DISABLE</button>
-            </div>
-            <div id="pin-setup-form" style="display:none;padding:8px 0;border-top:var(--border-muted);margin-top:4px;">
+
+            <!-- PIN setup form (hidden) -->
+            <div id="pin-setup-form" style="display:none;padding:8px 0;border-bottom:var(--border-muted);">
               <div style="font-size:0.8rem;font-weight:500;margin-bottom:8px;" id="pin-form-title">Set your PIN</div>
-              <div class="input-group" style="margin-bottom:6px;"><label for="settings-pin-input">PIN (4-6 chars)</label><input type="text" id="settings-pin-input" class="input" placeholder="PIN..." autocomplete="off" maxlength="6" data-1p-ignore="true" data-lpignore="true" data-form-type="other" style="-webkit-text-security:disc;text-security:disc;padding:6px 10px;font-size:0.85rem;"></div>
-              <div class="input-group" style="margin-bottom:6px;" id="pin-confirm-group"><label for="settings-pin-confirm">Confirm</label><input type="text" id="settings-pin-confirm" class="input" placeholder="Re-enter..." autocomplete="off" maxlength="6" data-1p-ignore="true" data-lpignore="true" data-form-type="other" style="-webkit-text-security:disc;text-security:disc;padding:6px 10px;font-size:0.85rem;"></div>
-              <div style="display:flex;gap:6px;"><button id="pin-submit-btn" class="btn btn--small btn--primary">CONFIRM</button><button id="pin-cancel-btn" class="btn btn--small">CANCEL</button></div>
+              <div class="input-group" style="margin-bottom:6px;">
+                <label for="settings-pin-input">PIN (4-6 chars)</label>
+                <input type="text" id="settings-pin-input" class="input" placeholder="PIN..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;text-security:disc;padding:6px 10px;font-size:0.85rem;">
+              </div>
+              <div class="input-group" style="margin-bottom:6px;" id="pin-confirm-group">
+                <label for="settings-pin-confirm">Confirm</label>
+                <input type="text" id="settings-pin-confirm" class="input" placeholder="Re-enter..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;text-security:disc;padding:6px 10px;font-size:0.85rem;">
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button id="pin-submit-btn" class="btn btn--small btn--primary">CONFIRM</button>
+                <button id="pin-cancel-btn" class="btn btn--small">CANCEL</button>
+              </div>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:var(--border-muted);margin-top:4px;">
-              <div id="totp-status-off"><span style="font-size:0.85rem;font-weight:500;">2FA</span> <span style="font-size:0.7rem;color:var(--color-text-muted);margin-left:6px;">Disabled</span></div>
-              <div id="totp-status-on" style="display:none;"><span style="font-size:0.85rem;font-weight:500;">2FA</span> <span style="font-size:0.7rem;color:var(--color-text);margin-left:6px;">Enabled</span></div>
-              <div><button id="totp-enable-btn" class="btn btn--small btn--primary">ENABLE</button><button id="totp-disable-btn" class="btn btn--small btn--danger" style="display:none;">DISABLE</button></div>
+
+            <!-- 2FA row -->
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:var(--border-muted);">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:0.85rem;font-weight:500;">2FA</span>
+                <span id="totp-status-text" style="font-size:0.7rem;color:var(--color-text-muted);">Disabled</span>
+              </div>
+              <div>
+                <button id="totp-enable-btn" class="btn btn--small btn--primary">ENABLE</button>
+                <button id="totp-disable-btn" class="btn btn--small btn--danger" style="display:none;">DISABLE</button>
+              </div>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:var(--border-muted);margin-top:4px;">
-              <div><span style="font-size:0.85rem;font-weight:500;">Seed Phrase</span> <span id="regen-seed-status" style="font-size:0.7rem;margin-left:6px;"></span></div>
+
+            <!-- Regen seed row -->
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:0.85rem;font-weight:500;">Seed Phrase</span>
+                <span id="regen-seed-status" style="font-size:0.7rem;"></span>
+              </div>
               <button id="regen-seed-btn" class="btn btn--small" disabled>REGENERATE</button>
             </div>
           </div>
@@ -311,7 +338,7 @@
         <div class="settings-sub" id="settings-activity-section">
           <div class="card" style="padding:16px;">
             <h2 style="font-size:1rem;margin-bottom:12px;padding-bottom:8px;border-bottom:var(--border-muted);">Activity Log</h2>
-            <div id="audit-log-list" style="max-height:calc(100vh - 200px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--color-text-muted) var(--color-surface);">
+            <div id="audit-log-list">
               <p style="font-size:0.8rem;color:var(--color-text-muted);">Loading...</p>
             </div>
           </div>

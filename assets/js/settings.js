@@ -96,6 +96,8 @@ const Settings = {
 
   _auditEntries: [],
   _auditFilter: 'all',
+  _auditPage: 1,
+  _auditPerPage: 10,
 
   async loadAuditLog() {
     try {
@@ -142,7 +144,7 @@ const Settings = {
     let html = '<div style="display:flex;gap:0;margin-bottom:12px;border-bottom:var(--border-muted);">';
     for (const [key, label] of Object.entries(filterCategories)) {
       const active = this._auditFilter === key;
-      html += `<button onclick="Settings._auditFilter='${key}';Settings._renderAuditLog()" style="padding:6px 12px;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;background:none;border:none;border-bottom:2px solid ${active ? 'var(--color-accent,#fff)' : 'transparent'};color:${active ? 'var(--color-text)' : 'var(--color-text-muted)'};font-family:var(--font-body);">${label}</button>`;
+      html += `<button onclick="Settings._auditFilter='${key}';Settings._auditPage=1;Settings._renderAuditLog()" style="padding:6px 12px;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;background:none;border:none;border-bottom:2px solid ${active ? 'var(--color-accent,#fff)' : 'transparent'};color:${active ? 'var(--color-text)' : 'var(--color-text-muted)'};font-family:var(--font-body);">${label}</button>`;
     }
     html += '</div>';
 
@@ -156,15 +158,31 @@ const Settings = {
     if (filtered.length === 0) {
       html += '<p style="font-size:0.8rem;color:var(--color-text-muted);text-align:center;padding:16px 0;">No entries in this category.</p>';
     } else {
-      html += filtered.map(e => {
+      // Paginate
+      const totalPages = Math.ceil(filtered.length / this._auditPerPage);
+      if (this._auditPage > totalPages) this._auditPage = totalPages;
+      const start = (this._auditPage - 1) * this._auditPerPage;
+      const pageItems = filtered.slice(start, start + this._auditPerPage);
+
+      html += pageItems.map(e => {
         const date = Settings.formatDate(e.created_at);
         const label = actionLabels[e.action] || e.action;
         const detail = e.detail ? ' - ' + e.detail : '';
         return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:var(--border-muted);font-size:0.8rem;">' +
-          '<span>' + label + detail + '</span>' +
+          '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;">' + label + detail + '</span>' +
           '<span style="color:var(--color-text-muted);white-space:nowrap;margin-left:16px;">' + date + '</span>' +
           '</div>';
       }).join('');
+
+      // Pagination controls
+      if (totalPages > 1) {
+        html += '<div style="display:flex;justify-content:center;gap:4px;padding:12px 0;">';
+        for (let i = 1; i <= totalPages; i++) {
+          const active = i === this._auditPage;
+          html += `<button onclick="Settings._auditPage=${i};Settings._renderAuditLog()" style="padding:4px 10px;font-size:0.75rem;cursor:pointer;background:${active ? 'var(--color-accent,#fff)' : 'none'};color:${active ? 'var(--color-bg,#000)' : 'var(--color-text-muted)'};border:var(--border-muted);font-family:var(--font-body);">${i}</button>`;
+        }
+        html += '</div>';
+      }
     }
 
     container.innerHTML = html;
@@ -195,14 +213,18 @@ const Settings = {
 
       // PIN state
       this._hasPIN = !!profile.has_pin;
-      document.getElementById('pin-status-off').style.display = this._hasPIN ? 'none' : 'block';
-      document.getElementById('pin-status-on').style.display = this._hasPIN ? 'block' : 'none';
+      document.getElementById('pin-status-text').textContent = this._hasPIN ? 'Enabled' : 'Disabled';
+      document.getElementById('pin-status-text').style.color = this._hasPIN ? 'var(--color-text)' : 'var(--color-text-muted)';
+      document.getElementById('pin-enable-btn').style.display = this._hasPIN ? 'none' : 'inline-flex';
+      document.getElementById('pin-disable-btn').style.display = this._hasPIN ? 'inline-flex' : 'none';
       this.hidePinSetup();
 
       // TOTP state
       const hasTotp = !!profile.has_totp;
-      document.getElementById('totp-status-off').style.display = hasTotp ? 'none' : 'block';
-      document.getElementById('totp-status-on').style.display = hasTotp ? 'block' : 'none';
+      document.getElementById('totp-status-text').textContent = hasTotp ? 'Enabled' : 'Disabled';
+      document.getElementById('totp-status-text').style.color = hasTotp ? 'var(--color-text)' : 'var(--color-text-muted)';
+      document.getElementById('totp-enable-btn').style.display = hasTotp ? 'none' : 'inline-flex';
+      document.getElementById('totp-disable-btn').style.display = hasTotp ? 'inline-flex' : 'none';
 
       this._hasTotp = hasTotp;
       const regenBtn = document.getElementById('regen-seed-btn');
@@ -325,8 +347,10 @@ const Settings = {
       try {
         await API.post('api/settings/set-pin', { pin: input });
         this._hasPIN = true;
-        document.getElementById('pin-status-off').style.display = 'none';
-        document.getElementById('pin-status-on').style.display = 'block';
+        document.getElementById('pin-status-text').textContent = 'Enabled';
+        document.getElementById('pin-status-text').style.color = 'var(--color-text)';
+        document.getElementById('pin-enable-btn').style.display = 'none';
+        document.getElementById('pin-disable-btn').style.display = 'inline-flex';
         this.hidePinSetup();
         Toast.show('PIN enabled.');
       } catch (e) { Toast.show('Failed: ' + e.message, true); }
@@ -335,8 +359,10 @@ const Settings = {
       try {
         await API.post('api/settings/remove-pin', { pin: input });
         this._hasPIN = false;
-        document.getElementById('pin-status-off').style.display = 'block';
-        document.getElementById('pin-status-on').style.display = 'none';
+        document.getElementById('pin-status-text').textContent = 'Disabled';
+        document.getElementById('pin-status-text').style.color = 'var(--color-text-muted)';
+        document.getElementById('pin-enable-btn').style.display = 'inline-flex';
+        document.getElementById('pin-disable-btn').style.display = 'none';
         this.hidePinSetup();
         Toast.show('PIN disabled');
       } catch (e) { Toast.show('Wrong PIN', true); }
@@ -575,8 +601,11 @@ const Settings = {
     if (!token || token.length !== 6) { Toast.show('Enter the 6-digit code', true); return; }
     try {
       await API.post('api/settings/totp-confirm', { token });
-      document.getElementById('totp-status-off').style.display = 'none';
-      document.getElementById('totp-status-on').style.display = 'block';
+      document.getElementById('totp-status-text').textContent = 'Enabled';
+      document.getElementById('totp-status-text').style.color = 'var(--color-text)';
+      document.getElementById('totp-enable-btn').style.display = 'none';
+      document.getElementById('totp-disable-btn').style.display = 'inline-flex';
+      this._hasTotp = true;
       this.hideTotpSetup();
       Toast.show('Two-factor authentication enabled');
     } catch (e) { Toast.show('Invalid code. Try again.', true); }
@@ -595,8 +624,11 @@ const Settings = {
     if (!token || token.length !== 6) { Toast.show('Enter the 6-digit code', true); return; }
     try {
       await API.post('api/settings/totp-disable', { token });
-      document.getElementById('totp-status-off').style.display = 'block';
-      document.getElementById('totp-status-on').style.display = 'none';
+      document.getElementById('totp-status-text').textContent = 'Disabled';
+      document.getElementById('totp-status-text').style.color = 'var(--color-text-muted)';
+      document.getElementById('totp-enable-btn').style.display = 'inline-flex';
+      document.getElementById('totp-disable-btn').style.display = 'none';
+      this._hasTotp = false;
       this.hideTotpDisable();
       Toast.show('Two-factor authentication disabled');
     } catch (e) { Toast.show('Invalid code', true); }

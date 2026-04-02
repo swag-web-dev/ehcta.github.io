@@ -348,9 +348,6 @@ const Chat = {
       if (this._pinPanelOpen && !e.target.closest('#chat-pin-panel') && !e.target.closest('#chat-pin-toggle')) {
         this.togglePinPanel();
       }
-      if (this._ttlMenuOpen && !e.target.closest('#chat-ttl-menu') && !e.target.closest('#chat-ttl-toggle')) {
-        this._closeTtlMenu();
-      }
     });
   },
 
@@ -1191,6 +1188,11 @@ const Chat = {
       </div>`;
     }
 
+    // Disappearing messages notification
+    if (conv && conv.default_ttl > 0) {
+      html += '<div style="text-align:center;padding:12px 0;"><span style="display:inline-block;padding:6px 16px;font-size:0.7rem;color:var(--color-text-muted);border:var(--border-muted);letter-spacing:0.06em;">&#9201; Disappearing messages are on &middot; Messages delete after 24 hours</span></div>';
+    }
+
     container.innerHTML = html;
     if (wasAtBottom) this.scrollToBottom(true);
   },
@@ -1348,8 +1350,7 @@ const Chat = {
     this._profileOpen = true;
 
     const currentTtl = conv.default_ttl || 0;
-    const ttlLabels = { 0: 'Off', 300: '5 minutes', 3600: '1 hour', 86400: '24 hours', 604800: '7 days', 2592000: '30 days' };
-    const ttlOptions = [0, 300, 3600, 86400, 604800, 2592000];
+    const ttlOn = currentTtl > 0;
 
     // Count files, images, links, phone numbers from messages
     const msgs = this._messages[this._activeConvId] || [];
@@ -1414,11 +1415,14 @@ const Chat = {
             <div style="font-size:1.1rem;font-weight:500;">${phoneCount}</div>
           </div>
         </div>
-        <div style="border-top:var(--border-muted);padding-top:12px;">
-          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-muted);margin-bottom:8px;">Disappearing Messages</div>
-          <select id="profile-ttl-select" onchange="Chat.setConvTtl(parseInt(this.value))" style="width:100%;padding:6px 10px;background:var(--color-input-bg,#111);border:var(--border,1px solid #fff);color:var(--color-text);font-size:0.85rem;font-family:var(--font-body);cursor:pointer;">
-            ${ttlOptions.map(v => `<option value="${v}" ${currentTtl === v ? 'selected' : ''}>${ttlLabels[v]}</option>`).join('')}
-          </select>
+        <div style="border-top:var(--border-muted);padding-top:12px;display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:0.85rem;font-weight:500;">Disappearing Messages</div>
+            <div style="font-size:0.7rem;color:var(--color-text-muted);margin-top:2px;">Messages delete after 24 hours</div>
+          </div>
+          <div class="toggle ${ttlOn ? 'toggle--active' : ''}" onclick="Chat.toggleDisappearing()" style="cursor:pointer;">
+            <div class="toggle__knob"></div>
+          </div>
         </div>
       </div>
       <div id="chat-profile-content" style="display:none;padding:0 16px 16px;"></div>
@@ -1495,54 +1499,18 @@ const Chat = {
   },
 
   // ── DISAPPEARING MESSAGES ──
-  _ttlMenuOpen: false,
-
-  toggleTtlMenu() {
-    this._ttlMenuOpen = !this._ttlMenuOpen;
-    if (this._pinPanelOpen) { this._pinPanelOpen = false; const p = document.getElementById('chat-pin-panel'); if (p) p.style.display = 'none'; }
-
-    let menu = document.getElementById('chat-ttl-menu');
-    if (this._ttlMenuOpen) {
-      if (menu) menu.remove();
-      const conv = this._conversations.find(c => c.id === this._activeConvId);
-      const currentTtl = conv ? (conv.default_ttl || 0) : 0;
-      const options = [
-        { label: 'Off', value: 0 },
-        { label: '5 minutes', value: 300 },
-        { label: '1 hour', value: 3600 },
-        { label: '24 hours', value: 86400 },
-        { label: '7 days', value: 604800 },
-        { label: '30 days', value: 2592000 },
-      ];
-      const btn = document.getElementById('chat-ttl-toggle');
-      const rect = btn ? btn.getBoundingClientRect() : { left: 100, bottom: 50 };
-      menu = document.createElement('div');
-      menu.id = 'chat-ttl-menu';
-      menu.style.cssText = 'position:fixed;z-index:60;background:var(--color-bg,#000);border:var(--border,1px solid #fff);min-width:160px;padding:4px 0;left:' + rect.left + 'px;top:' + rect.bottom + 'px;';
-      menu.innerHTML = '<div style="padding:8px 14px;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-muted);border-bottom:var(--border-muted);">Disappearing Messages</div>' +
-        options.map(o => `<button style="display:block;width:100%;background:none;border:none;color:var(--color-text);font-size:0.8rem;padding:8px 14px;cursor:pointer;text-align:left;font-family:var(--font-body);" onmouseenter="this.style.background='var(--color-surface-hover,rgba(255,255,255,0.08))'" onmouseleave="this.style.background='none'" onclick="Chat.setConvTtl(${o.value})">${o.label}${currentTtl === o.value ? ' ✓' : ''}</button>`).join('');
-      document.body.appendChild(menu);
-    } else {
-      if (menu) menu.remove();
-    }
-  },
-
-  _closeTtlMenu() {
-    this._ttlMenuOpen = false;
-    const menu = document.getElementById('chat-ttl-menu');
-    if (menu) menu.remove();
-  },
-
-  async setConvTtl(ttl) {
+  async toggleDisappearing() {
     if (!this._activeConvId) return;
-    this._closeTtlMenu();
+    const conv = this._conversations.find(c => c.id === this._activeConvId);
+    const currentTtl = conv ? (conv.default_ttl || 0) : 0;
+    const newTtl = currentTtl > 0 ? 0 : 86400; // toggle between off and 24 hours
     try {
-      await API.post('api/chat/conversations/ttl', { conversation_id: this._activeConvId, ttl });
-      const conv = this._conversations.find(c => c.id === this._activeConvId);
-      if (conv) conv.default_ttl = ttl;
-      const labels = { 0: 'off', 300: '5 minutes', 3600: '1 hour', 86400: '24 hours', 604800: '7 days', 2592000: '30 days' };
-      Toast.show('Disappearing messages: ' + (labels[ttl] || ttl + 's'));
-    } catch (e) { Toast.show(e.message || 'Failed to set', true); }
+      await API.post('api/chat/conversations/ttl', { conversation_id: this._activeConvId, ttl: newTtl });
+      if (conv) conv.default_ttl = newTtl;
+      Toast.show(newTtl > 0 ? 'Disappearing messages enabled (24 hours)' : 'Disappearing messages disabled');
+      this.closeUserProfile();
+      this.renderMessages(this._activeConvId);
+    } catch (e) { Toast.show(e.message || 'Failed', true); }
   },
 
   async _loadPins() {

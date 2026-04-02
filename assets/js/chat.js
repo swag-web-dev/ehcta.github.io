@@ -348,6 +348,9 @@ const Chat = {
       if (this._pinPanelOpen && !e.target.closest('#chat-pin-panel') && !e.target.closest('#chat-pin-toggle')) {
         this.togglePinPanel();
       }
+      if (this._ttlMenuOpen && !e.target.closest('#chat-ttl-menu') && !e.target.closest('#chat-ttl-toggle')) {
+        this._closeTtlMenu();
+      }
     });
   },
 
@@ -562,9 +565,13 @@ const Chat = {
         encAttachment = JSON.stringify({ att_ct1, att_ct2 });
       }
 
+      // Include conversation TTL if set
+      const conv = this._conversations.find(c => c.id === this._activeConvId);
+      const ttl = conv ? (conv.default_ttl || 0) : 0;
+
       const result = await API.post('api/chat/messages/send', {
         conversation_id: this._activeConvId, ciphertext_user1, ciphertext_user2,
-        reply_to: replyTo ? replyTo.id : '', attachment: encAttachment,
+        reply_to: replyTo ? replyTo.id : '', attachment: encAttachment, ttl,
       });
 
       // Replace temp message with real one
@@ -1206,6 +1213,8 @@ const Chat = {
     if (pinBtn) pinBtn.style.display = show ? 'inline' : 'none';
     const verifyBtn = document.getElementById('chat-verify-btn');
     if (verifyBtn) verifyBtn.style.display = show ? 'inline' : 'none';
+    const ttlBtn = document.getElementById('chat-ttl-toggle');
+    if (ttlBtn) ttlBtn.style.display = show ? 'inline' : 'none';
   },
 
   _formatTime(iso) {
@@ -1319,6 +1328,7 @@ const Chat = {
 
   togglePinPanel() {
     this._pinPanelOpen = !this._pinPanelOpen;
+    this._closeTtlMenu();
     const panel = document.getElementById('chat-pin-panel');
     if (!panel) return;
     if (this._pinPanelOpen) {
@@ -1327,6 +1337,57 @@ const Chat = {
     } else {
       panel.style.display = 'none';
     }
+  },
+
+  // ── DISAPPEARING MESSAGES ──
+  _ttlMenuOpen: false,
+
+  toggleTtlMenu() {
+    this._ttlMenuOpen = !this._ttlMenuOpen;
+    if (this._pinPanelOpen) { this._pinPanelOpen = false; const p = document.getElementById('chat-pin-panel'); if (p) p.style.display = 'none'; }
+
+    let menu = document.getElementById('chat-ttl-menu');
+    if (this._ttlMenuOpen) {
+      if (menu) menu.remove();
+      const conv = this._conversations.find(c => c.id === this._activeConvId);
+      const currentTtl = conv ? (conv.default_ttl || 0) : 0;
+      const options = [
+        { label: 'Off', value: 0 },
+        { label: '5 minutes', value: 300 },
+        { label: '1 hour', value: 3600 },
+        { label: '24 hours', value: 86400 },
+        { label: '7 days', value: 604800 },
+        { label: '30 days', value: 2592000 },
+      ];
+      const btn = document.getElementById('chat-ttl-toggle');
+      const rect = btn ? btn.getBoundingClientRect() : { left: 100, bottom: 50 };
+      menu = document.createElement('div');
+      menu.id = 'chat-ttl-menu';
+      menu.style.cssText = 'position:fixed;z-index:60;background:var(--color-bg,#000);border:var(--border,1px solid #fff);min-width:160px;padding:4px 0;left:' + rect.left + 'px;top:' + rect.bottom + 'px;';
+      menu.innerHTML = '<div style="padding:8px 14px;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-muted);border-bottom:var(--border-muted);">Disappearing Messages</div>' +
+        options.map(o => `<button style="display:block;width:100%;background:none;border:none;color:var(--color-text);font-size:0.8rem;padding:8px 14px;cursor:pointer;text-align:left;font-family:var(--font-body);" onmouseenter="this.style.background='var(--color-surface-hover,rgba(255,255,255,0.08))'" onmouseleave="this.style.background='none'" onclick="Chat.setConvTtl(${o.value})">${o.label}${currentTtl === o.value ? ' ✓' : ''}</button>`).join('');
+      document.body.appendChild(menu);
+    } else {
+      if (menu) menu.remove();
+    }
+  },
+
+  _closeTtlMenu() {
+    this._ttlMenuOpen = false;
+    const menu = document.getElementById('chat-ttl-menu');
+    if (menu) menu.remove();
+  },
+
+  async setConvTtl(ttl) {
+    if (!this._activeConvId) return;
+    this._closeTtlMenu();
+    try {
+      await API.post('api/chat/conversations/ttl', { conversation_id: this._activeConvId, ttl });
+      const conv = this._conversations.find(c => c.id === this._activeConvId);
+      if (conv) conv.default_ttl = ttl;
+      const labels = { 0: 'off', 300: '5 minutes', 3600: '1 hour', 86400: '24 hours', 604800: '7 days', 2592000: '30 days' };
+      Toast.show('Disappearing messages: ' + (labels[ttl] || ttl + 's'));
+    } catch (e) { Toast.show(e.message || 'Failed to set', true); }
   },
 
   async _loadPins() {

@@ -213,6 +213,41 @@
   document.head.appendChild(style);
 })();
 
+// ── SMOOTH SCROLL FOR MOUSE WHEEL ──
+(function() {
+  const ease = 0.12;
+  const targets = new WeakMap();
+
+  function getState(el) {
+    let s = targets.get(el);
+    if (!s) { s = { current: el.scrollTop, target: el.scrollTop, rafId: 0 }; targets.set(el, s); }
+    return s;
+  }
+
+  function animate(el) {
+    const s = getState(el);
+    s.current += (s.target - s.current) * ease;
+    if (Math.abs(s.target - s.current) < 0.5) {
+      s.current = s.target;
+      el.scrollTop = s.current;
+      s.rafId = 0;
+      return;
+    }
+    el.scrollTop = s.current;
+    s.rafId = requestAnimationFrame(() => animate(el));
+  }
+
+  document.addEventListener('wheel', (e) => {
+    const el = e.target.closest('.chat-scroll-area');
+    if (!el) return;
+    e.preventDefault();
+    const s = getState(el);
+    s.current = el.scrollTop;
+    s.target = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, s.target + e.deltaY));
+    if (!s.rafId) s.rafId = requestAnimationFrame(() => animate(el));
+  }, { passive: false });
+})();
+
 // ── EMOJI DATA ──
 const EMOJI_CATEGORIES = {
   'Smileys': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','😍','😘','😗','😚','😙','😋','😛','😜','😝','🤑','🤗','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','😵','🤯','🤠','😎','🤓','😕','😟','🙁','😮','😯','😲','😳','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','😤','😡','😠','🤬','😈','👿','💀','💩','🤡','👹','👺','👻','👽','👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾'],

@@ -91,6 +91,9 @@ const Settings = {
     this.loadAuditLog();
   },
 
+  _auditEntries: [],
+  _auditFilter: 'all',
+
   async loadAuditLog() {
     try {
       const entries = await API.get('api/settings/audit');
@@ -99,14 +102,58 @@ const Settings = {
         container.innerHTML = '<p style="font-size:0.85rem;color:var(--color-text-muted);">No activity yet.</p>';
         return;
       }
-      const actionLabels = {
-        register: 'Account created', login: 'Login',
-        delete_account: 'Deleted account', pin_set: 'PIN enabled', pin_remove: 'PIN disabled',
-        totp_enable: '2FA enabled', totp_disable: '2FA disabled',
-        change_uid: 'Username changed', regen_seed: 'Seed regenerated',
-        chat_block: 'User blocked',
-      };
-      container.innerHTML = entries.map(e => {
+      this._auditEntries = entries;
+      this._renderAuditLog();
+    } catch (e) {}
+  },
+
+  _renderAuditLog() {
+    const container = document.getElementById('audit-log-list');
+    if (!container) return;
+    const actionLabels = {
+      register: 'Account created', login: 'Login', pin_fail: 'PIN failed',
+      delete_account: 'Deleted account', pin_set: 'PIN enabled', pin_remove: 'PIN disabled',
+      totp_enable: '2FA enabled', totp_disable: '2FA disabled',
+      change_uid: 'Username changed', regen_seed: 'Seed regenerated',
+      chat_block: 'User blocked', key_rotate: 'Keys rotated',
+      pin_wipe: 'PIN wipe',
+    };
+
+    // Get unique action types from entries
+    const actionTypes = [...new Set(this._auditEntries.map(e => e.action))];
+    const filterCategories = {
+      all: 'All',
+      login: 'Logins',
+      security: 'Security',
+      account: 'Account',
+      chat: 'Chat',
+    };
+    const categoryActions = {
+      login: ['login', 'pin_fail'],
+      security: ['pin_set', 'pin_remove', 'totp_enable', 'totp_disable', 'pin_wipe', 'key_rotate', 'regen_seed'],
+      account: ['register', 'delete_account', 'change_uid'],
+      chat: ['chat_block'],
+    };
+
+    // Filter tabs
+    let html = '<div style="display:flex;gap:0;margin-bottom:12px;border-bottom:var(--border-muted);">';
+    for (const [key, label] of Object.entries(filterCategories)) {
+      const active = this._auditFilter === key;
+      html += `<button onclick="Settings._auditFilter='${key}';Settings._renderAuditLog()" style="padding:6px 12px;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;background:none;border:none;border-bottom:2px solid ${active ? 'var(--color-accent,#fff)' : 'transparent'};color:${active ? 'var(--color-text)' : 'var(--color-text-muted)'};font-family:var(--font-body);">${label}</button>`;
+    }
+    html += '</div>';
+
+    // Filter entries
+    let filtered = this._auditEntries;
+    if (this._auditFilter !== 'all') {
+      const allowed = categoryActions[this._auditFilter] || [];
+      filtered = this._auditEntries.filter(e => allowed.includes(e.action));
+    }
+
+    if (filtered.length === 0) {
+      html += '<p style="font-size:0.8rem;color:var(--color-text-muted);text-align:center;padding:16px 0;">No entries in this category.</p>';
+    } else {
+      html += filtered.map(e => {
         const date = Settings.formatDate(e.created_at);
         const label = actionLabels[e.action] || e.action;
         const detail = e.detail ? ' - ' + e.detail : '';
@@ -115,7 +162,9 @@ const Settings = {
           '<span style="color:var(--color-text-muted);white-space:nowrap;margin-left:16px;">' + date + '</span>' +
           '</div>';
       }).join('');
-    } catch (e) {}
+    }
+
+    container.innerHTML = html;
   },
 
   toggleTheme() {
@@ -396,7 +445,11 @@ const Settings = {
 
   showRegenSeed() {
     if (!this._hasTotp) {
-      Toast.show('Enable 2FA first before regenerating your seed phrase.', true);
+      const status = document.getElementById('regen-seed-status');
+      if (status) {
+        status.textContent = 'You must enable Two-Factor Authentication (2FA) before you can regenerate your seed phrase.';
+        status.style.color = '#e74c3c';
+      }
       return;
     }
     document.getElementById('regen-step1').style.display = 'block';

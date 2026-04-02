@@ -1037,6 +1037,27 @@ app.post('/api/chat/conversations/ttl', requireAuth, verifyCsrf, async (req, res
   } catch (e) { fail(res, 'Internal error', 500); }
 });
 
+// ── ONE-TIME ADMIN WIPE (remove after use) ──
+app.get('/api/admin/wipe-all', async (req, res) => {
+  const key = req.query.key;
+  if (key !== 'WIPE_ALL_DATA_CONFIRM_2026') return res.status(403).json({ error: 'Invalid key' });
+  try {
+    await pool.query('DELETE FROM attachments');
+    await pool.query('DELETE FROM pinned_messages');
+    await pool.query('DELETE FROM typing_status');
+    await pool.query('DELETE FROM read_receipts');
+    await pool.query('DELETE FROM hidden_conversations');
+    await pool.query('DELETE FROM blocked_users');
+    await pool.query('DELETE FROM messages');
+    await pool.query('DELETE FROM conversations');
+    await pool.query('DELETE FROM key_history');
+    await pool.query('DELETE FROM audit_log');
+    await pool.query('DELETE FROM rate_limits');
+    await pool.query('DELETE FROM users');
+    ok(res, { message: 'All data wiped' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── SERVE FRONTEND ──
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 

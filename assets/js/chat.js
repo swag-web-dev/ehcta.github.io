@@ -449,19 +449,19 @@ const Chat = {
 
   async _decryptMyMessage(msg, convId) {
     const cid = convId || this._activeConvId || '';
-    // Try v2 (forward secrecy + conversation binding) first, then fall back to v1
-    try { return await Crypto.decryptChatMessageFS(msg.ciphertext_user1, cid); }
-    catch (e1) {
-      try { return await Crypto.decryptChatMessageFS(msg.ciphertext_user2, cid); }
-      catch (e2) {
-        // Fall back to legacy v1 decryption
-        try { return await Crypto.decryptChatMessage(msg.ciphertext_user1); }
-        catch (e3) {
-          try { return await Crypto.decryptChatMessage(msg.ciphertext_user2); }
-          catch (e4) { return '[Unable to decrypt]'; }
-        }
-      }
+    // Try all decryption methods: v2 user1, v2 user2, v1 user1, v1 user2
+    const attempts = [
+      () => Crypto.decryptChatMessageFS(msg.ciphertext_user1, cid),
+      () => Crypto.decryptChatMessageFS(msg.ciphertext_user2, cid),
+      () => Crypto.decryptChatMessageFS(msg.ciphertext_user1, ''),
+      () => Crypto.decryptChatMessageFS(msg.ciphertext_user2, ''),
+      () => Crypto.decryptChatMessage(msg.ciphertext_user1),
+      () => Crypto.decryptChatMessage(msg.ciphertext_user2),
+    ];
+    for (const attempt of attempts) {
+      try { return await attempt(); } catch (e) {}
     }
+    return '[Unable to decrypt]';
   },
 
   async _decryptAttachment(msg) {
@@ -551,15 +551,28 @@ const Chat = {
       const user2PubKey = amUser1 ? meta.otherPublicKey : this._myPublicKey;
 
       const convId = this._activeConvId;
-      const ciphertext_user1 = await Crypto.encryptForChatFS(msgContent, user1PubKey, convId);
-      const ciphertext_user2 = await Crypto.encryptForChatFS(msgContent, user2PubKey, convId);
+      let ciphertext_user1, ciphertext_user2;
+      try {
+        ciphertext_user1 = await Crypto.encryptForChatFS(msgContent, user1PubKey, convId);
+        ciphertext_user2 = await Crypto.encryptForChatFS(msgContent, user2PubKey, convId);
+      } catch (fsErr) {
+        console.warn('FS encryption failed, falling back to v1:', fsErr);
+        ciphertext_user1 = await Crypto.encryptForChat(msgContent, user1PubKey);
+        ciphertext_user2 = await Crypto.encryptForChat(msgContent, user2PubKey);
+      }
 
       // Encrypt attachment if present
       let encAttachment = '';
       if (attachment) {
-        const att_ct1 = await Crypto.encryptForChatFS(attachment, user1PubKey, convId);
-        const att_ct2 = await Crypto.encryptForChatFS(attachment, user2PubKey, convId);
-        encAttachment = JSON.stringify({ att_ct1, att_ct2 });
+        try {
+          const att_ct1 = await Crypto.encryptForChatFS(attachment, user1PubKey, convId);
+          const att_ct2 = await Crypto.encryptForChatFS(attachment, user2PubKey, convId);
+          encAttachment = JSON.stringify({ att_ct1, att_ct2 });
+        } catch (attErr) {
+          const att_ct1 = await Crypto.encryptForChat(attachment, user1PubKey);
+          const att_ct2 = await Crypto.encryptForChat(attachment, user2PubKey);
+          encAttachment = JSON.stringify({ att_ct1, att_ct2 });
+        }
       }
 
       // Include conversation TTL if set

@@ -943,29 +943,30 @@ textarea.input {
     bottom: auto !important;
     border-right: none !important;
     border-bottom: var(--border) !important;
-    flex-direction: row !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    padding: var(--spacing-sm) !important;
-    flex-wrap: wrap;
+    flex-direction: column !important;
+    padding: 0 !important;
   }
   #settings-nav .nav__logo {
     display: none;
   }
   #settings-nav .nav__tabs {
     flex-direction: row !important;
-    flex-wrap: nowrap;
-    overflow-x: auto;
+    flex-wrap: wrap;
     display: flex !important;
     width: 100%;
   }
   #settings-nav .nav__tab {
     white-space: nowrap;
     border: none !important;
-    border-bottom: none !important;
-    padding: var(--spacing-sm) var(--spacing-md);
-    font-size: var(--font-size-xs);
+    padding: 10px 12px;
+    font-size: 0.7rem;
     flex-shrink: 0;
+  }
+  #settings-nav .nav__tab:first-child {
+    width: 100%;
+    border-bottom: var(--border-muted) !important;
+    text-align: left;
+    font-size: 0.8rem;
   }
 
   /* Settings content full width on mobile */

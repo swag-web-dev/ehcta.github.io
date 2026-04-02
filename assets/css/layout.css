@@ -1,6 +1,7 @@
 html {
   scroll-behavior: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  height: 100%;
 }
 
 html.lenis, html.lenis body {
@@ -12,8 +13,8 @@ body {
   font-size: var(--font-size-base);
   color: var(--color-text);
   background: var(--color-bg);
-  min-height: 100vh;
-  overflow-x: hidden;
+  height: 100%;
+  overflow: hidden;
   max-width: 100vw;
 }
 

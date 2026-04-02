@@ -4,28 +4,47 @@ const Crypto = {
   _keyMaterial: null,
   _saltBytes: null,
   _chatPrivateKey: null,
+  _chainStates: {},
 
   async init(seedPhrase, salt) {
     this._salt = salt;
     await this._deriveAllKeys(seedPhrase, salt);
-    // Store derived key (not seed phrase) in sessionStorage
-    const rawKey = await window.crypto.subtle.exportKey('raw', this._keys['aes-256-gcm']);
-    sessionStorage.setItem('_dk', this._bytesToBase64(new Uint8Array(rawKey)));
-    sessionStorage.setItem('_salt', salt);
+    // Store wrapped key for session restore
+    await this._saveWrappedKey();
+  },
+
+  async _saveWrappedKey() {
+    // Generate a random wrapping key
+    const wrapKey = await window.crypto.subtle.generateKey(
+      { name: 'AES-KW', length: 256 }, true, ['wrapKey', 'unwrapKey']
+    );
+    // Wrap the vault key
+    const wrapped = await window.crypto.subtle.wrapKey('raw', this._keys['aes-256-gcm'], wrapKey, 'AES-KW');
+    // Export wrapping key to sessionStorage (ephemeral, cleared on tab close)
+    const rawWrap = await window.crypto.subtle.exportKey('raw', wrapKey);
+    sessionStorage.setItem('_wk', this._bytesToBase64(new Uint8Array(rawWrap)));
+    sessionStorage.setItem('_wv', this._bytesToBase64(new Uint8Array(wrapped)));
+    sessionStorage.setItem('_salt', this._salt);
   },
 
   async restore() {
-    const dk = sessionStorage.getItem('_dk');
+    const wkB64 = sessionStorage.getItem('_wk');
+    const wvB64 = sessionStorage.getItem('_wv');
     const salt = sessionStorage.getItem('_salt');
-    if (dk && salt) {
-      const rawKey = this._base64ToBytes(dk);
-      this._keys['aes-256-gcm'] = await window.crypto.subtle.importKey(
-        'raw', rawKey, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
-      );
-      this._keys[256] = this._keys['aes-256-gcm'];
-      this._salt = salt;
-      this._saltBytes = this._hexToBytes(salt);
-      return true;
+    if (wkB64 && wvB64 && salt) {
+      try {
+        const wrapKey = await window.crypto.subtle.importKey('raw', this._base64ToBytes(wkB64), { name: 'AES-KW', length: 256 }, false, ['unwrapKey']);
+        this._keys['aes-256-gcm'] = await window.crypto.subtle.unwrapKey(
+          'raw', this._base64ToBytes(wvB64), wrapKey, 'AES-KW',
+          { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
+        );
+        this._keys[256] = this._keys['aes-256-gcm'];
+        this._salt = salt;
+        this._saltBytes = this._hexToBytes(salt);
+        return true;
+      } catch(e) {
+        return false;
+      }
     }
     return false;
   },
@@ -35,8 +54,12 @@ const Crypto = {
     this._salt = null;
     this._keyMaterial = null;
     this._chatPrivateKey = null;
-    sessionStorage.removeItem('_dk');
+    this._chainStates = {};
+    sessionStorage.removeItem('_wk');
+    sessionStorage.removeItem('_wv');
     sessionStorage.removeItem('_salt');
+    // Also remove old format
+    sessionStorage.removeItem('_dk');
   },
 
   async _deriveAllKeys(seedPhrase, salt) {
@@ -46,15 +69,30 @@ const Crypto = {
     );
     this._saltBytes = this._hexToBytes(salt);
 
-    // AES-256-GCM (exportable, also used for 192 derivation)
+    // Non-extractable AES-256-GCM key
     this._keys['aes-256-gcm'] = await window.crypto.subtle.deriveKey(
       { name: 'PBKDF2', salt: this._saltBytes, iterations: 600000, hash: 'SHA-256' },
       this._keyMaterial,
-      { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
+      { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
     );
 
     // Aliases for backward compat
     this._keys[256] = this._keys['aes-256-gcm'];
+  },
+
+  // ══ MESSAGE CHAIN STATE (ordering/deletion detection) ══
+
+  async _advanceChain(convId) {
+    if (!this._chainStates[convId]) {
+      this._chainStates[convId] = { counter: 0, hash: '' };
+    }
+    const state = this._chainStates[convId];
+    state.counter++;
+    const enc = new TextEncoder();
+    const data = enc.encode(convId + ':' + state.counter + ':' + state.hash);
+    const hashBuf = await window.crypto.subtle.digest('SHA-256', data);
+    state.hash = this._bytesToBase64(new Uint8Array(hashBuf));
+    return { counter: state.counter, hash: state.hash };
   },
 
   // ══ CHAT ENCRYPTION (RSA-4096 hybrid) ══
@@ -120,7 +158,7 @@ const Crypto = {
     return new TextDecoder().decode(pt);
   },
 
-  // ══ FORWARD SECRECY (v2 encryption with conversation binding) ══
+  // ══ FORWARD SECRECY (v2 encryption with conversation binding + chain state) ══
 
   async encryptForChatFS(plaintext, recipientPubKeyJson, conversationId) {
     const pubJwk = JSON.parse(recipientPubKeyJson);
@@ -136,6 +174,9 @@ const Crypto = {
 
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
 
+    // Advance chain state for message ordering/deletion detection
+    const chain = await this._advanceChain(conversationId || '');
+
     // Bind message to conversation ID via AAD (additional authenticated data)
     const aad = new TextEncoder().encode(conversationId || '');
     const ct = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, aesKey, new TextEncoder().encode(plaintext));
@@ -150,6 +191,8 @@ const Crypto = {
       ct: this._bytesToBase64(new Uint8Array(ct)),
       eph: ephPub,
       cid: conversationId || '',
+      mc: chain.counter,
+      ch: chain.hash,
     }));
   },
 

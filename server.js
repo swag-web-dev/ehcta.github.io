@@ -78,6 +78,10 @@ async function initDB() {
     "CREATE TABLE IF NOT EXISTS read_receipts (user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, last_read_at TEXT DEFAULT '', PRIMARY KEY (user_id, conversation_id))",
     "CREATE TABLE IF NOT EXISTS typing_status (user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, conversation_id))",
     "CREATE TABLE IF NOT EXISTS pinned_messages (conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, pinned_by TEXT NOT NULL, pinned_at TEXT NOT NULL, PRIMARY KEY (conversation_id, message_id))",
+    "CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, message_id TEXT NOT NULL, encrypted_data TEXT NOT NULL, created_at TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS key_history (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, chat_public_key TEXT NOT NULL, chat_private_key_enc TEXT NOT NULL, chat_private_key_iv TEXT NOT NULL, created_at TEXT NOT NULL)",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS ttl INTEGER DEFAULT 0",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS default_ttl INTEGER DEFAULT 0",
   ];
   for (const m of migrations) {
     try { await pool.query(m); } catch(e) {}
@@ -592,6 +596,8 @@ app.post('/api/settings/delete-account', requireAuth, verifyCsrf, async (req, re
     await pool.query('DELETE FROM blocked_users WHERE blocker_id = $1 OR blocked_id = $1', [uid]);
     await pool.query('DELETE FROM pinned_messages WHERE pinned_by = $1', [uid]);
     await pool.query('DELETE FROM audit_log WHERE user_id = $1', [uid]);
+    await pool.query('DELETE FROM attachments WHERE message_id IN (SELECT id FROM messages WHERE sender_id = $1)', [uid]);
+    await pool.query('DELETE FROM key_history WHERE user_id = $1', [uid]);
     // Delete messages sent by this user
     await pool.query('DELETE FROM messages WHERE sender_id = $1', [uid]);
     // Delete conversations where this user is a participant (messages cascade via FK)
@@ -633,7 +639,7 @@ app.get('/api/chat/conversations', requireAuth, async (req, res) => {
   try {
     const uid = req.session.userId;
     const { rows } = await pool.query(`
-      SELECT c.id, c.user1_id, c.user2_id, c.status, c.initiated_by, c.created_at,
+      SELECT c.id, c.user1_id, c.user2_id, c.status, c.initiated_by, c.created_at, c.default_ttl,
         CASE WHEN c.user1_id = $1 THEN u2.display_name ELSE u1.display_name END AS other_user_name,
         CASE WHEN c.user1_id = $1 THEN u2.unique_id ELSE u1.unique_id END AS other_user_uid,
         CASE WHEN c.user1_id = $1 THEN u2.last_seen ELSE u1.last_seen END AS other_last_seen,
@@ -654,6 +660,7 @@ app.get('/api/chat/conversations', requireAuth, async (req, res) => {
       status: r.status || 'accepted',
       is_request: r.status === 'pending' && r.initiated_by !== uid,
       is_pending: r.status === 'pending' && r.initiated_by === uid,
+      default_ttl: parseInt(r.default_ttl) || 0,
     })));
   } catch (e) { fail(res, 'Internal error', 500); }
 });
@@ -770,7 +777,7 @@ app.get('/api/chat/messages', requireAuth, async (req, res) => {
 app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) => {
   try {
     const uid = req.session.userId;
-    const { conversation_id, ciphertext_user1, ciphertext_user2, reply_to, attachment } = req.body;
+    const { conversation_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, ttl } = req.body;
     if (!conversation_id || !ciphertext_user1 || !ciphertext_user2) return fail(res, 'Missing fields');
 
     const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [conversation_id]);
@@ -781,8 +788,8 @@ app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) =>
 
     const id = genId();
     const created_at = new Date().toISOString();
-    await pool.query('INSERT INTO messages (id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [id, conversation_id, uid, ciphertext_user1, ciphertext_user2, reply_to || '', attachment || '', created_at]);
+    await pool.query('INSERT INTO messages (id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, ttl, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      [id, conversation_id, uid, ciphertext_user1, ciphertext_user2, reply_to || '', attachment || '', ttl || 0, created_at]);
     broadcastToConversation(conversation_id, uid);
     ok(res, { id, created_at });
   } catch (e) { fail(res, 'Internal error', 500); }
@@ -958,6 +965,78 @@ app.post('/api/ws/token', requireAuth, (req, res) => {
   ok(res, { token });
 });
 
+// ── ATTACHMENTS ──
+app.post('/api/chat/attachments/upload', requireAuth, verifyCsrf, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const { message_id, encrypted_data } = req.body;
+    if (!message_id || !encrypted_data) return fail(res, 'Missing fields');
+    // Verify user is participant in the message's conversation
+    const { rows: mRows } = await pool.query('SELECT conversation_id FROM messages WHERE id = $1', [message_id]);
+    if (!mRows.length) return fail(res, 'Message not found', 404);
+    const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [mRows[0].conversation_id]);
+    const conv = cRows[0];
+    if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
+    const id = genId();
+    await pool.query('INSERT INTO attachments (id, message_id, encrypted_data, created_at) VALUES ($1,$2,$3,$4)', [id, message_id, encrypted_data, new Date().toISOString()]);
+    ok(res, { id });
+  } catch (e) { fail(res, 'Internal error', 500); }
+});
+
+app.get('/api/chat/attachments/:id', requireAuth, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const { rows } = await pool.query('SELECT a.*, m.conversation_id FROM attachments a JOIN messages m ON m.id = a.message_id WHERE a.id = $1', [req.params.id]);
+    if (!rows.length) return fail(res, 'Not found', 404);
+    const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [rows[0].conversation_id]);
+    const conv = cRows[0];
+    if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
+    ok(res, { encrypted_data: rows[0].encrypted_data });
+  } catch (e) { fail(res, 'Internal error', 500); }
+});
+
+// ── KEY ROTATION ──
+app.post('/api/chat/keys/rotate', requireAuth, verifyCsrf, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const { public_key, private_key_enc, private_key_iv } = req.body;
+    if (!public_key || !private_key_enc || !private_key_iv) return fail(res, 'Missing key data');
+    // Archive old keys
+    const { rows } = await pool.query('SELECT chat_public_key, chat_private_key_enc, chat_private_key_iv FROM users WHERE id = $1', [uid]);
+    if (rows[0] && rows[0].chat_public_key) {
+      await pool.query('INSERT INTO key_history (user_id, chat_public_key, chat_private_key_enc, chat_private_key_iv, created_at) VALUES ($1,$2,$3,$4,$5)',
+        [uid, rows[0].chat_public_key, rows[0].chat_private_key_enc, rows[0].chat_private_key_iv, new Date().toISOString()]);
+    }
+    // Set new keys
+    await pool.query('UPDATE users SET chat_public_key = $1, chat_private_key_enc = $2, chat_private_key_iv = $3 WHERE id = $4',
+      [public_key, private_key_enc, private_key_iv, uid]);
+    await auditLog(uid, 'key_rotate', 'Chat keys rotated');
+    ok(res);
+  } catch (e) { fail(res, 'Internal error', 500); }
+});
+
+app.get('/api/chat/keys/history', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT chat_public_key, chat_private_key_enc, chat_private_key_iv, created_at FROM key_history WHERE user_id = $1 ORDER BY created_at DESC', [req.session.userId]);
+    ok(res, rows);
+  } catch (e) { fail(res, 'Internal error', 500); }
+});
+
+// ── DISAPPEARING MESSAGES ──
+app.post('/api/chat/conversations/ttl', requireAuth, verifyCsrf, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const convId = (req.body.conversation_id || '').trim();
+    const ttl = parseInt(req.body.ttl) || 0;
+    if (!convId) return fail(res, 'Missing conversation_id');
+    const { rows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [convId]);
+    const conv = rows[0];
+    if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
+    await pool.query('UPDATE conversations SET default_ttl = $1 WHERE id = $2', [ttl, convId]);
+    ok(res);
+  } catch (e) { fail(res, 'Internal error', 500); }
+});
+
 // ── SERVE FRONTEND ──
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
@@ -994,6 +1073,17 @@ initDB().then(() => {
     for (const [token, data] of wsTokens) {
       if (data.expires < now) wsTokens.delete(token);
     }
+  }, 60000);
+
+  // Clean up expired disappearing messages every 60 seconds
+  setInterval(async () => {
+    try {
+      await pool.query(`
+        DELETE FROM messages
+        WHERE ttl > 0
+        AND (CAST(EXTRACT(EPOCH FROM CAST(created_at AS TIMESTAMP)) AS INTEGER) + ttl) < EXTRACT(EPOCH FROM NOW())
+      `);
+    } catch(e) {}
   }, 60000);
 
   wss.on('connection', (ws) => {

@@ -1124,7 +1124,8 @@ const Chat = {
 
     const conv = this._conversations.find(c => c.id === convId);
     if (conv) {
-      document.getElementById('chat-header-name').textContent = (conv.other_user_name || 'Unknown') + ' (@' + (conv.other_user_uid || '') + ')';
+      const headerName = document.getElementById('chat-header-name');
+      headerName.innerHTML = '<span style="cursor:pointer;" onclick="Chat.showUserProfile()">' + this._esc((conv.other_user_name || 'Unknown') + ' (@' + (conv.other_user_uid || '') + ')') + '</span>';
       document.getElementById('chat-header-status').textContent = this._getLastSeenText(conv.other_last_seen);
     }
 
@@ -1213,8 +1214,6 @@ const Chat = {
     if (pinBtn) pinBtn.style.display = show ? 'inline' : 'none';
     const verifyBtn = document.getElementById('chat-verify-btn');
     if (verifyBtn) verifyBtn.style.display = show ? 'inline' : 'none';
-    const ttlBtn = document.getElementById('chat-ttl-toggle');
-    if (ttlBtn) ttlBtn.style.display = show ? 'inline' : 'none';
   },
 
   _formatTime(iso) {
@@ -1337,6 +1336,162 @@ const Chat = {
     } else {
       panel.style.display = 'none';
     }
+  },
+
+  // ── USER PROFILE POPUP ──
+  _profileOpen: false,
+
+  showUserProfile() {
+    if (this._profileOpen) { this.closeUserProfile(); return; }
+    const conv = this._conversations.find(c => c.id === this._activeConvId);
+    if (!conv) return;
+    this._profileOpen = true;
+
+    const currentTtl = conv.default_ttl || 0;
+    const ttlLabels = { 0: 'Off', 300: '5 minutes', 3600: '1 hour', 86400: '24 hours', 604800: '7 days', 2592000: '30 days' };
+    const ttlOptions = [0, 300, 3600, 86400, 604800, 2592000];
+
+    // Count files, images, links, phone numbers from messages
+    const msgs = this._messages[this._activeConvId] || [];
+    let fileCount = 0, imageCount = 0, linkCount = 0, phoneCount = 0;
+    const phoneRegex = /(\+?\d[\d\s\-()]{6,}\d)/g;
+    const urlRegex = /(https?:\/\/[^\s<]+)/gi;
+
+    for (const m of msgs) {
+      const text = m._plaintext || '';
+      const links = text.match(urlRegex);
+      if (links) linkCount += links.length;
+      const phones = text.match(phoneRegex);
+      if (phones) phoneCount += phones.length;
+      const att = m._decryptedAttachment || m.attachment || '';
+      if (att.length > 2) {
+        try {
+          const files = JSON.parse(att);
+          for (const f of files) {
+            if (f.type && f.type.startsWith('image/')) imageCount++;
+            else fileCount++;
+          }
+        } catch(e) {}
+      }
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'chat-profile-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
+
+    const popup = document.createElement('div');
+    popup.style.cssText = 'background:var(--color-bg,#000);border:var(--border,1px solid #fff);width:320px;max-height:80vh;overflow-y:auto;';
+
+    // Header
+    popup.innerHTML = `
+      <div style="padding:16px;border-bottom:var(--border-muted);display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:1.1rem;font-weight:500;font-family:var(--font-title);">${this._esc(conv.other_user_name || 'Unknown')}</div>
+          <div style="font-size:0.75rem;color:var(--color-text-muted);">@${this._esc(conv.other_user_uid || '')}</div>
+        </div>
+        <button onclick="Chat.closeUserProfile()" style="background:none;border:none;color:var(--color-text-muted);cursor:pointer;font-size:1.2rem;">&times;</button>
+      </div>
+      <div style="padding:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+          <div onclick="Chat._showSharedContent('files')" style="cursor:pointer;padding:12px;border:var(--border-muted);text-align:center;">
+            <div style="font-size:1.5rem;margin-bottom:4px;">&#128196;</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);">Files</div>
+            <div style="font-size:1.1rem;font-weight:500;">${fileCount}</div>
+          </div>
+          <div onclick="Chat._showSharedContent('images')" style="cursor:pointer;padding:12px;border:var(--border-muted);text-align:center;">
+            <div style="font-size:1.5rem;margin-bottom:4px;">&#128247;</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);">Pictures</div>
+            <div style="font-size:1.1rem;font-weight:500;">${imageCount}</div>
+          </div>
+          <div onclick="Chat._showSharedContent('links')" style="cursor:pointer;padding:12px;border:var(--border-muted);text-align:center;">
+            <div style="font-size:1.5rem;margin-bottom:4px;">&#128279;</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);">Links</div>
+            <div style="font-size:1.1rem;font-weight:500;">${linkCount}</div>
+          </div>
+          <div onclick="Chat._showSharedContent('phones')" style="cursor:pointer;padding:12px;border:var(--border-muted);text-align:center;">
+            <div style="font-size:1.5rem;margin-bottom:4px;">&#128222;</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);">Phone Numbers</div>
+            <div style="font-size:1.1rem;font-weight:500;">${phoneCount}</div>
+          </div>
+        </div>
+        <div style="border-top:var(--border-muted);padding-top:12px;">
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-text-muted);margin-bottom:8px;">Disappearing Messages</div>
+          <select id="profile-ttl-select" onchange="Chat.setConvTtl(parseInt(this.value))" style="width:100%;padding:6px 10px;background:var(--color-input-bg,#111);border:var(--border,1px solid #fff);color:var(--color-text);font-size:0.85rem;font-family:var(--font-body);cursor:pointer;">
+            ${ttlOptions.map(v => `<option value="${v}" ${currentTtl === v ? 'selected' : ''}>${ttlLabels[v]}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div id="chat-profile-content" style="display:none;padding:0 16px 16px;"></div>
+    `;
+
+    overlay.appendChild(popup);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this.closeUserProfile();
+    });
+    document.body.appendChild(overlay);
+  },
+
+  closeUserProfile() {
+    this._profileOpen = false;
+    const overlay = document.getElementById('chat-profile-overlay');
+    if (overlay) overlay.remove();
+  },
+
+  _showSharedContent(type) {
+    const container = document.getElementById('chat-profile-content');
+    if (!container) return;
+    const msgs = this._messages[this._activeConvId] || [];
+    let html = '';
+    const urlRegex = /(https?:\/\/[^\s<]+)/gi;
+    const phoneRegex = /(\+?\d[\d\s\-()]{6,}\d)/g;
+
+    if (type === 'files' || type === 'images') {
+      for (const m of msgs) {
+        const att = m._decryptedAttachment || m.attachment || '';
+        if (att.length <= 2) continue;
+        try {
+          const files = JSON.parse(att);
+          for (const f of files) {
+            const isImage = f.type && f.type.startsWith('image/');
+            if (type === 'images' && isImage) {
+              html += `<div style="margin-bottom:8px;"><img src="${this._esc(f.data)}" style="max-width:100%;max-height:120px;cursor:pointer;border:var(--border-muted);" onclick="Chat._openLightbox(this.src)"><div style="font-size:0.65rem;color:var(--color-text-muted);margin-top:2px;">${this._esc(f.name)}</div></div>`;
+            } else if (type === 'files' && !isImage) {
+              html += `<div style="padding:6px 0;border-bottom:var(--border-muted);font-size:0.8rem;"><a href="${this._esc(f.data)}" download="${this._esc(f.name)}" style="color:var(--color-text);text-decoration:none;">${this._esc(f.name)} <span style="color:var(--color-text-muted);">(${this._formatSize(f.size)})</span></a></div>`;
+            }
+          }
+        } catch(e) {}
+      }
+    } else if (type === 'links') {
+      const seen = new Set();
+      for (const m of msgs) {
+        const text = m._plaintext || '';
+        const links = text.match(urlRegex);
+        if (links) {
+          for (const link of links) {
+            if (seen.has(link)) continue;
+            seen.add(link);
+            html += `<div style="padding:6px 0;border-bottom:var(--border-muted);font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="${this._esc(link)}" target="_blank" rel="noopener" style="color:var(--color-text);">${this._esc(link)}</a></div>`;
+          }
+        }
+      }
+    } else if (type === 'phones') {
+      const seen = new Set();
+      for (const m of msgs) {
+        const text = m._plaintext || '';
+        const phones = text.match(phoneRegex);
+        if (phones) {
+          for (const phone of phones) {
+            const clean = phone.trim();
+            if (seen.has(clean)) continue;
+            seen.add(clean);
+            html += `<div style="padding:8px 0;border-bottom:var(--border-muted);font-size:0.9rem;">${this._esc(clean)}</div>`;
+          }
+        }
+      }
+    }
+
+    container.innerHTML = html || '<div style="padding:12px 0;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">None found</div>';
+    container.style.display = 'block';
   },
 
   // ── DISAPPEARING MESSAGES ──

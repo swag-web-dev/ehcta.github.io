@@ -52,7 +52,6 @@ const App = {
     document.getElementById('app-view').style.display = 'block';
     resetInactivity();
 
-    if (window.Lenis) new Lenis({ autoRaf: true });
 
     // Default to chat
     if (!window.location.hash || window.location.hash === '#') {

@@ -69,11 +69,11 @@ const Crypto = {
     );
     this._saltBytes = this._hexToBytes(salt);
 
-    // Non-extractable AES-256-GCM key
+    // AES-256-GCM key (extractable for key wrapping)
     this._keys['aes-256-gcm'] = await window.crypto.subtle.deriveKey(
       { name: 'PBKDF2', salt: this._saltBytes, iterations: 600000, hash: 'SHA-256' },
       this._keyMaterial,
-      { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
+      { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
     );
 
     // Aliases for backward compat

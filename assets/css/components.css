@@ -754,6 +754,7 @@ textarea.input {
 /* ── APP VIEW ── */
 #app-view {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 #main-content {
@@ -764,23 +765,28 @@ textarea.input {
   max-width: 100%;
 }
 .app-view--settings {
-  display: flex !important;
-  flex-direction: column !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 .app-view--settings #settings-nav {
-  flex-shrink: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 220px;
+  z-index: 100;
 }
 .app-view--settings #main-content {
   margin-left: 220px;
   padding: 24px;
-  overflow-y: hidden;
-  overflow-x: hidden;
-  flex: 1;
+  overflow: visible;
+  height: auto;
+}
+.main--settings #settings-section {
+  overflow: visible;
 }
 .main--settings .settings-sub {
-  height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
 }
 
 /* ── CHAT LAYOUT ── */
@@ -795,6 +801,7 @@ textarea.input {
 }
 .chat-layout--fullpage {
   height: 100vh;
+  height: 100dvh;
   border: none;
   border-right: var(--border);
   overflow: hidden;
@@ -1073,17 +1080,23 @@ textarea.input {
   .app-view--settings #main-content {
     margin-left: 0 !important;
     padding: var(--spacing-md) !important;
-    overflow-y: hidden !important;
+    padding-top: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
   }
-  #settings-nav {
-    position: relative !important;
+  .app-view--settings #settings-nav {
+    position: sticky !important;
+    top: 0;
+    left: auto !important;
+    bottom: auto !important;
     width: 100% !important;
     height: auto !important;
-    bottom: auto !important;
     border-right: none !important;
     border-bottom: var(--border) !important;
     flex-direction: column !important;
     padding: 0 !important;
+    z-index: 100;
+    background: var(--color-bg);
   }
   #settings-nav .nav__logo {
     display: none;

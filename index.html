@@ -210,37 +210,73 @@
 
         <!-- Profile -->
         <div class="settings-sub" id="settings-profile-section">
-          <div class="card" style="padding:16px;">
-            <h2 style="font-size:1rem;margin-bottom:12px;padding-bottom:8px;border-bottom:var(--border-muted);">Profile</h2>
-            <div class="input-group" style="margin-bottom:8px;">
-              <label for="settings-display-name">Display Name</label>
-              <div style="display:flex;gap:6px;">
-                <input type="text" id="settings-display-name" class="input" placeholder="Anonymous" autocomplete="off" style="padding:6px 10px;font-size:0.85rem;">
-                <button id="settings-save-name" class="btn btn--small" style="white-space:nowrap;">SAVE</button>
+          <div class="card" style="padding:32px;margin-bottom:24px;">
+            <h2 style="font-size:1.25rem;margin-bottom:24px;padding-bottom:16px;border-bottom:var(--border-muted);">Profile</h2>
+            <div class="profile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+              <div>
+                <div class="input-group" style="margin-bottom:16px;">
+                  <label for="settings-display-name">Display Name</label>
+                  <div style="display:flex;gap:8px;">
+                    <input type="text" id="settings-display-name" class="input" placeholder="Anonymous" autocomplete="off">
+                    <button id="settings-save-name" class="btn btn--small" style="white-space:nowrap;">SAVE</button>
+                  </div>
+                </div>
+                <div class="input-group">
+                  <label for="settings-unique-id">Username</label>
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    <span style="color:var(--color-text-muted);font-size:1rem;">@</span>
+                    <input type="text" id="settings-unique-id" class="input" placeholder="username" autocomplete="off" maxlength="30" style="flex:1;">
+                    <button id="settings-save-uid" class="btn btn--small" style="white-space:nowrap;">SAVE</button>
+                  </div>
+                  <div style="font-size:0.65rem;color:var(--color-text-muted);margin-top:4px;">3-30 characters. Letters, numbers, underscores, dots.</div>
+                </div>
+              </div>
+              <div>
+                <div style="margin-bottom:16px;">
+                  <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--color-text-muted);margin-bottom:4px;">Account ID</div>
+                  <code id="settings-user-hash" style="font-size:0.85rem;color:var(--color-text-muted);"></code>
+                </div>
+                <div>
+                  <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--color-text-muted);margin-bottom:4px;">Member Since</div>
+                  <span id="settings-created-at" style="font-size:0.85rem;"></span>
+                </div>
               </div>
             </div>
-            <div class="input-group" style="margin-bottom:8px;">
-              <label for="settings-unique-id">Username</label>
-              <div style="display:flex;gap:6px;align-items:center;">
-                <span style="color:var(--color-text-muted);">@</span>
-                <input type="text" id="settings-unique-id" class="input" placeholder="username" autocomplete="off" maxlength="30" style="flex:1;padding:6px 10px;font-size:0.85rem;">
-                <button id="settings-save-uid" class="btn btn--small" style="white-space:nowrap;">SAVE</button>
+          </div>
+
+          <div class="card" style="padding:32px;margin-bottom:24px;">
+            <h2 style="font-size:1.25rem;margin-bottom:24px;padding-bottom:16px;border-bottom:var(--border-muted);">Timezone</h2>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-size:0.9rem;font-weight:500;">Your Timezone</div>
+                <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:2px;">Used for timestamps</div>
               </div>
+              <input type="text" id="settings-timezone" class="input" style="width:320px;" placeholder="Search timezone..." autocomplete="off" readonly>
             </div>
-            <div style="display:flex;gap:16px;padding:8px 0;border-top:var(--border-muted);margin-top:8px;font-size:0.75rem;">
-              <span style="color:var(--color-text-muted);">ID: <code id="settings-user-hash" style="color:var(--color-text-muted);"></code></span>
-              <span style="color:var(--color-text-muted);">Since: <span id="settings-created-at"></span></span>
+            <div style="margin-top:12px;font-size:0.8rem;color:var(--color-text-muted);">
+              Current time: <span id="settings-current-time" style="color:var(--color-text);"></span>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:var(--border-muted);">
-              <span style="font-size:0.8rem;">Timezone</span>
-              <input type="text" id="settings-timezone" class="input" style="width:200px;padding:6px 10px;font-size:0.8rem;" placeholder="Search timezone..." autocomplete="off" readonly>
-            </div>
-            <div style="font-size:0.7rem;color:var(--color-text-muted);">Current time: <span id="settings-current-time" style="color:var(--color-text);"></span></div>
-            <div class="session-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;padding:8px 0;border-top:var(--border-muted);margin-top:8px;font-size:0.7rem;">
-              <div><span style="color:var(--color-text-muted);">Login:</span> <span id="session-login-time">--</span></div>
-              <div><span style="color:var(--color-text-muted);">Duration:</span> <span id="session-duration">--</span></div>
-              <div><span style="color:var(--color-text-muted);">IP:</span> <span id="session-ip" style="color:var(--color-text-muted);">--</span></div>
-              <div><span style="color:var(--color-text-muted);">Browser:</span> <span id="session-browser" style="color:var(--color-text-muted);">--</span></div>
+          </div>
+
+          <div class="card" style="padding:32px;margin-bottom:24px;">
+            <h2 style="font-size:1.25rem;margin-bottom:24px;padding-bottom:16px;border-bottom:var(--border-muted);">Session</h2>
+            <div class="session-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+              <div>
+                <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--color-text-muted);margin-bottom:4px;">Logged In</div>
+                <span id="session-login-time" style="font-size:0.85rem;">--</span>
+              </div>
+              <div>
+                <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--color-text-muted);margin-bottom:4px;">Session Duration</div>
+                <span id="session-duration" style="font-size:0.85rem;">--</span>
+              </div>
+              <div>
+                <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--color-text-muted);margin-bottom:4px;">IP Address</div>
+                <span id="session-ip" style="font-size:0.85rem;color:var(--color-text-muted);">--</span>
+              </div>
+              <div>
+                <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--color-text-muted);margin-bottom:4px;">Browser</div>
+                <span id="session-browser" style="font-size:0.85rem;color:var(--color-text-muted);">--</span>
+              </div>
             </div>
           </div>
         </div>

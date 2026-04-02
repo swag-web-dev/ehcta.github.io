@@ -753,27 +753,28 @@ textarea.input {
 
 /* ── APP VIEW ── */
 #app-view {
-  height: 100%;
+  height: 100vh;
   overflow: hidden;
 }
+#main-content {
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  max-width: 100%;
+}
 .app-view--settings {
-  overflow: visible !important;
   display: flex !important;
   flex-direction: column !important;
 }
 .app-view--settings #settings-nav {
   flex-shrink: 0;
 }
-#main-content {
-  height: 100%;
-  overflow: hidden;
-  overflow-x: hidden;
-}
-.main--settings {
+.app-view--settings #main-content {
   margin-left: 220px;
   padding: 24px;
-  overflow-y: hidden !important;
-  overflow-x: hidden !important;
+  overflow-y: hidden;
+  overflow-x: hidden;
   flex: 1;
 }
 .main--settings .settings-sub {
@@ -793,7 +794,7 @@ textarea.input {
   min-height: 0;
 }
 .chat-layout--fullpage {
-  height: 100%;
+  height: 100vh;
   border: none;
   border-right: var(--border);
   overflow: hidden;
@@ -967,46 +968,7 @@ textarea.input {
 
 /* ── MOBILE RESPONSIVE FIXES ── */
 @media (max-width: 600px) {
-  /* Settings nav as horizontal tabs on mobile */
-  #settings-nav {
-    position: relative !important;
-    width: 100% !important;
-    height: auto !important;
-    bottom: auto !important;
-    border-right: none !important;
-    border-bottom: var(--border) !important;
-    flex-direction: column !important;
-    padding: 0 !important;
-  }
-  #settings-nav .nav__logo {
-    display: none;
-  }
-  #settings-nav .nav__tabs {
-    flex-direction: row !important;
-    flex-wrap: wrap;
-    display: flex !important;
-    width: 100%;
-  }
-  #settings-nav .nav__tab {
-    white-space: nowrap;
-    border: none !important;
-    padding: 10px 12px;
-    font-size: 0.7rem;
-    flex-shrink: 0;
-  }
-  #settings-nav .nav__tab:first-child {
-    width: 100%;
-    border-bottom: var(--border-muted) !important;
-    text-align: left;
-    font-size: 0.8rem;
-  }
-
-  /* Settings content full width on mobile */
-  .main--settings {
-    margin-left: 0 !important;
-    padding: var(--spacing-md) !important;
-    overflow-y: auto !important;
-  }
+  /* Settings content full width on mobile - handled by 900px breakpoint */
 
   /* Profile grids stack to 1 column */
   .profile-grid {
@@ -1108,11 +1070,12 @@ textarea.input {
   }
 }
 
-/* Override the JS-set margin-left on settings for mobile */
+/* Override settings layout for tablets and mobile */
 @media (max-width: 900px) {
-  .main--settings {
+  .app-view--settings #main-content {
     margin-left: 0 !important;
     padding: var(--spacing-md) !important;
+    overflow-y: hidden !important;
   }
   #settings-nav {
     position: relative !important;
@@ -1121,28 +1084,28 @@ textarea.input {
     bottom: auto !important;
     border-right: none !important;
     border-bottom: var(--border) !important;
-    flex-direction: row !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    padding: var(--spacing-sm) !important;
-    flex-wrap: wrap;
+    flex-direction: column !important;
+    padding: 0 !important;
   }
   #settings-nav .nav__logo {
     display: none;
   }
   #settings-nav .nav__tabs {
     flex-direction: row !important;
-    flex-wrap: nowrap;
-    overflow-x: auto;
+    flex-wrap: wrap;
     display: flex !important;
     width: 100%;
   }
   #settings-nav .nav__tab {
     white-space: nowrap;
     border: none !important;
-    border-bottom: none !important;
-    padding: var(--spacing-sm) var(--spacing-md);
-    font-size: var(--font-size-xs);
+    padding: 8px 12px;
+    font-size: 0.7rem;
     flex-shrink: 0;
+  }
+  #settings-nav .nav__tab:first-child {
+    width: 100%;
+    border-bottom: var(--border-muted) !important;
+    font-size: 0.8rem;
   }
 }

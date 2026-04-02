@@ -772,9 +772,14 @@ textarea.input {
 .main--settings {
   margin-left: 220px;
   padding: 24px;
-  overflow-y: auto !important;
+  overflow-y: hidden !important;
   overflow-x: hidden !important;
   flex: 1;
+}
+.main--settings .settings-sub {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* ── CHAT LAYOUT ── */

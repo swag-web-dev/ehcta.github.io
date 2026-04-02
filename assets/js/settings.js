@@ -10,7 +10,10 @@ const Settings = {
     this.saveNameBtn.addEventListener('click', () => this.saveName());
     document.getElementById('settings-save-uid').addEventListener('click', () => this.saveUniqueId());
     this.themeToggle.addEventListener('click', () => this.toggleTheme());
-    this.deleteAccountBtn.addEventListener('click', () => this.deleteAccount());
+    this.deleteAccountBtn.addEventListener('click', () => this.showDeleteForm());
+    document.getElementById('settings-wipe-data').addEventListener('click', () => this.wipeData());
+    document.getElementById('delete-confirm-btn').addEventListener('click', () => this.confirmDeleteAccount());
+    document.getElementById('delete-cancel-btn').addEventListener('click', () => this.hideDeleteForm());
 
     // PIN controls
     this._hasPIN = false;
@@ -229,14 +232,53 @@ const Settings = {
     }
   },
 
-  async deleteAccount() {
-    if (!await confirmAction('This will permanently delete your account and all data. This is irreversible.', 'Delete Account')) return;
+  async wipeData() {
+    if (!await confirmAction('This will clear all your chats, reset your name and username, and restore all settings to default. Your account stays but the other person keeps their copy of chats. This cannot be undone.', 'Wipe Data')) return;
     try {
-      await API.post('api/settings/delete-account', {});
+      await API.post('api/settings/wipe-data', {});
+      Toast.show('All data wiped');
       Crypto.clear();
       window.location.reload();
     } catch (e) {
       Toast.show('Failed: ' + e.message, true);
+    }
+  },
+
+  showDeleteForm() {
+    const form = document.getElementById('delete-confirm-form');
+    form.style.display = 'block';
+    document.getElementById('delete-seed-input').value = '';
+    document.getElementById('delete-pin-input').value = '';
+    document.getElementById('delete-totp-input').value = '';
+    document.getElementById('delete-error').style.display = 'none';
+    // Show PIN/TOTP fields if enabled
+    document.getElementById('delete-pin-group').style.display = this._hasPIN ? 'block' : 'none';
+    document.getElementById('delete-totp-group').style.display = this._hasTotp ? 'block' : 'none';
+    document.getElementById('delete-seed-input').focus();
+  },
+
+  hideDeleteForm() {
+    document.getElementById('delete-confirm-form').style.display = 'none';
+  },
+
+  async confirmDeleteAccount() {
+    const seedPhrase = document.getElementById('delete-seed-input').value.trim();
+    const pin = document.getElementById('delete-pin-input').value.trim();
+    const totpToken = document.getElementById('delete-totp-input').value.trim();
+    const errorEl = document.getElementById('delete-error');
+
+    if (!seedPhrase) { errorEl.textContent = 'Enter your seed phrase'; errorEl.style.display = 'block'; return; }
+
+    // Hash seed phrase client-side (same as login)
+    const seedHash = await Auth._hashSeed(seedPhrase);
+
+    try {
+      await API.post('api/settings/delete-account', { seed_hash: seedHash, pin, totp_token: totpToken });
+      Crypto.clear();
+      window.location.reload();
+    } catch (e) {
+      errorEl.textContent = e.message || 'Failed to delete account';
+      errorEl.style.display = 'block';
     }
   },
 

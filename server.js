@@ -585,9 +585,66 @@ app.post('/api/settings/regen-seed', requireAuth, verifyCsrf, async (req, res) =
   } catch (e) { fail(res, 'Internal error', 500); }
 });
 
+// Wipe data: clear chats (one-sided), reset settings/name/username, keep account
+app.post('/api/settings/wipe-data', requireAuth, verifyCsrf, async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    // Hide all conversations (one-sided - other person keeps their copy)
+    const { rows: convRows } = await pool.query('SELECT id FROM conversations WHERE user1_id = $1 OR user2_id = $1', [uid]);
+    for (const conv of convRows) {
+      await pool.query('INSERT INTO hidden_conversations (user_id, conversation_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [uid, conv.id]);
+    }
+    // Clear chat keys (forces regeneration)
+    const newUniqueId = 'user_' + crypto.randomBytes(4).toString('hex');
+    await pool.query(
+      "UPDATE users SET display_name = 'Anonymous', unique_id = $2, settings = '{}', chat_public_key = '', chat_private_key_enc = '', chat_private_key_iv = '', pin_hash = '', pin_failures = 0, totp_secret = '' WHERE id = $1",
+      [uid, newUniqueId]
+    );
+    // Clear read receipts, typing, pinned, blocked
+    await pool.query('DELETE FROM read_receipts WHERE user_id = $1', [uid]);
+    await pool.query('DELETE FROM typing_status WHERE user_id = $1', [uid]);
+    await pool.query('DELETE FROM blocked_users WHERE blocker_id = $1', [uid]);
+    await pool.query('DELETE FROM key_history WHERE user_id = $1', [uid]);
+    await auditLog(uid, 'wipe_data', 'All data wiped');
+    ok(res);
+  } catch (e) { fail(res, 'Internal error', 500); }
+});
+
+// Delete account: requires seed phrase verification + PIN/TOTP if enabled
 app.post('/api/settings/delete-account', requireAuth, verifyCsrf, async (req, res) => {
   try {
     const uid = req.session.userId;
+    const seedHash = (req.body.seed_hash || '').trim();
+    const pin = (req.body.pin || '').trim();
+    const totpToken = (req.body.totp_token || '').trim();
+
+    if (!seedHash) return fail(res, 'Seed phrase is required');
+
+    // Verify seed phrase matches this account
+    const expectedId = hashSeed(seedHash);
+    if (expectedId !== uid) return fail(res, 'Invalid seed phrase', 401);
+
+    // Get user to check PIN/TOTP
+    const { rows: userRows } = await pool.query('SELECT pin_hash, totp_secret, salt FROM users WHERE id = $1', [uid]);
+    const user = userRows[0];
+    if (!user) return fail(res, 'User not found', 404);
+
+    // Verify PIN if enabled
+    if (user.pin_hash) {
+      if (!pin) return fail(res, 'PIN is required');
+      const pinHash = crypto.pbkdf2Sync(pin, user.salt, 100000, 64, 'sha512').toString('hex');
+      if (pinHash !== user.pin_hash) return fail(res, 'Invalid PIN', 401);
+    }
+
+    // Verify TOTP if enabled
+    if (user.totp_secret) {
+      if (!totpToken) return fail(res, 'Authenticator code is required');
+      const totpDecrypted = decryptTotp(user.totp_secret);
+      const totp = new TOTP({ secret: Secret.fromBase32(totpDecrypted), digits: 6, period: 30 });
+      const delta = totp.validate({ token: totpToken, window: 1 });
+      if (delta === null) return fail(res, 'Invalid authenticator code', 401);
+    }
+
     await auditLog(uid, 'delete_account', 'Account deleted');
     // Cascade delete all related data
     await pool.query('DELETE FROM hidden_conversations WHERE user_id = $1', [uid]);
@@ -598,9 +655,7 @@ app.post('/api/settings/delete-account', requireAuth, verifyCsrf, async (req, re
     await pool.query('DELETE FROM audit_log WHERE user_id = $1', [uid]);
     await pool.query('DELETE FROM attachments WHERE message_id IN (SELECT id FROM messages WHERE sender_id = $1)', [uid]);
     await pool.query('DELETE FROM key_history WHERE user_id = $1', [uid]);
-    // Delete messages sent by this user
     await pool.query('DELETE FROM messages WHERE sender_id = $1', [uid]);
-    // Delete conversations where this user is a participant (messages cascade via FK)
     await pool.query('DELETE FROM conversations WHERE user1_id = $1 OR user2_id = $1', [uid]);
     await pool.query('DELETE FROM users WHERE id = $1', [uid]);
     req.session.destroy(() => ok(res));

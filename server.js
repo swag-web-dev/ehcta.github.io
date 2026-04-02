@@ -1,10 +1,12 @@
 const express = require('express');
 const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 const { Pool } = require('pg');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const { TOTP, Secret } = require('otpauth');
+const WebSocket = require('ws');
 
 const app = express();
 const PORT = process.env.PORT || 5500;
@@ -89,6 +91,7 @@ async function initDB() {
 
 // Session secret from env or generate a stable one
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const USER_ID_PEPPER = process.env.USER_ID_PEPPER || SESSION_SECRET;
 
 // ── TOTP ENCRYPTION KEY (for encrypting TOTP secrets at rest) ──
 const TOTP_KEY = process.env.TOTP_ENCRYPTION_KEY || crypto.createHash('sha256').update(SESSION_SECRET + '_totp').digest();
@@ -125,7 +128,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss: ws:");
   }
   next();
 });
@@ -165,6 +168,7 @@ app.use('/api/', (req, res, next) => {
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 app.use(session({
+  store: new pgSession({ pool, createTableIfMissing: true }),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -177,6 +181,18 @@ function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
   // Update last_seen
   pool.query("UPDATE users SET last_seen = $1 WHERE id = $2", [new Date().toISOString(), req.session.userId]).catch(() => {});
+  // Per-user rate limiting
+  const now = Date.now();
+  const userRateKey = 'user_' + req.session.userId;
+  let userEntry = apiRateLimits.get(userRateKey);
+  if (!userEntry || now - userEntry.windowStart > API_RATE_WINDOW) {
+    userEntry = { windowStart: now, count: 0 };
+    apiRateLimits.set(userRateKey, userEntry);
+  }
+  userEntry.count++;
+  if (userEntry.count > API_RATE_LIMIT) {
+    return res.status(429).json({ success: false, error: 'Too many requests.' });
+  }
   next();
 }
 function verifyCsrf(req, res, next) {
@@ -213,9 +229,13 @@ function generateSeedPhrase() {
   return words.join(' ');
 }
 
-function hashSeed(phrase) {
+function hashSeedPlain(phrase) {
   const normalized = phrase.toLowerCase().trim().replace(/\s+/g, ' ');
   return crypto.createHash('sha256').update(normalized).digest('hex');
+}
+
+function hashSeed(input) {
+  return crypto.createHmac('sha256', USER_ID_PEPPER).update(input).digest('hex');
 }
 
 // ══════════════════════════════════════
@@ -226,7 +246,7 @@ function hashSeed(phrase) {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const phrase = generateSeedPhrase();
-    const userId = hashSeed(phrase);
+    const userId = hashSeed(hashSeedPlain(phrase));
     const { rows } = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
     if (rows.length) return fail(res, 'Collision, try again');
     const salt = crypto.randomBytes(16).toString('hex');
@@ -250,12 +270,13 @@ app.post('/api/auth/login', async (req, res) => {
     // Accept pre-hashed seed (client-side hashing) or raw phrase (legacy)
     let userId;
     if (req.body.seed_hash) {
-      userId = req.body.seed_hash;
-      if (!/^[a-f0-9]{64}$/.test(userId)) return fail(res, 'Invalid seed hash');
+      const seedHash = req.body.seed_hash;
+      if (!/^[a-f0-9]{64}$/.test(seedHash)) return fail(res, 'Invalid seed hash');
+      userId = hashSeed(seedHash);
     } else {
       const phrase = (req.body.seed_phrase || '').trim();
       if (!phrase) return fail(res, 'Seed phrase is required');
-      userId = hashSeed(phrase);
+      userId = hashSeed(hashSeedPlain(phrase));
     }
     const ip = crypto.createHash('sha256').update(req.ip || 'unknown').digest('hex');
     const now = Math.floor(Date.now() / 1000);
@@ -524,7 +545,7 @@ app.post('/api/settings/regen-seed', requireAuth, verifyCsrf, async (req, res) =
     if (delta === null) return fail(res, 'Invalid authenticator code', 401);
 
     const newPhrase = generateSeedPhrase();
-    const newUserId = hashSeed(newPhrase);
+    const newUserId = hashSeed(hashSeedPlain(newPhrase));
     const newSalt = crypto.randomBytes(16).toString('hex');
 
     const { rows: existRows } = await pool.query('SELECT id FROM users WHERE id = $1', [newUserId]);
@@ -715,6 +736,7 @@ app.get('/api/chat/messages', requireAuth, async (req, res) => {
     const uid = req.session.userId;
     const convId = (req.query.conversation_id || '').trim();
     const after = (req.query.after || '').trim();
+    const before = (req.query.before || '').trim();
     if (!convId) return fail(res, 'Missing conversation_id');
 
     const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [convId]);
@@ -723,14 +745,25 @@ app.get('/api/chat/messages', requireAuth, async (req, res) => {
     if (conv.user1_id !== uid && conv.user2_id !== uid) return fail(res, 'Not a participant', 403);
 
     let rows;
-    if (after) {
-      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at FROM messages WHERE conversation_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 200', [convId, after]);
+    if (before) {
+      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at FROM messages WHERE conversation_id = $1 AND created_at < $2 ORDER BY created_at DESC LIMIT 50', [convId, before]);
+      rows = r.rows.reverse();
+    } else if (after) {
+      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at FROM messages WHERE conversation_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 50', [convId, after]);
       rows = r.rows;
     } else {
-      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 200', [convId]);
-      rows = r.rows;
+      const r = await pool.query('SELECT id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 50', [convId]);
+      rows = r.rows.reverse();
     }
-    ok(res, rows);
+
+    // Check if there are older messages
+    let has_more = false;
+    if (rows.length > 0) {
+      const oldest = rows[0].created_at;
+      const olderRes = await pool.query('SELECT 1 FROM messages WHERE conversation_id = $1 AND created_at < $2 LIMIT 1', [convId, oldest]);
+      has_more = olderRes.rows.length > 0;
+    }
+    ok(res, { messages: rows, has_more });
   } catch (e) { fail(res, 'Internal error', 500); }
 });
 
@@ -750,6 +783,7 @@ app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) =>
     const created_at = new Date().toISOString();
     await pool.query('INSERT INTO messages (id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
       [id, conversation_id, uid, ciphertext_user1, ciphertext_user2, reply_to || '', attachment || '', created_at]);
+    broadcastToConversation(conversation_id, uid);
     ok(res, { id, created_at });
   } catch (e) { fail(res, 'Internal error', 500); }
 });
@@ -771,6 +805,7 @@ app.post('/api/chat/messages/delete', requireAuth, verifyCsrf, async (req, res) 
     if (conv.user1_id !== uid && conv.user2_id !== uid) return fail(res, 'Not a participant', 403);
 
     await pool.query('DELETE FROM messages WHERE id = $1', [msgId]);
+    broadcastToConversation(msg.conversation_id, uid);
     ok(res);
   } catch (e) { fail(res, 'Internal error', 500); }
 });
@@ -792,6 +827,7 @@ app.post('/api/chat/messages/edit', requireAuth, verifyCsrf, async (req, res) =>
     if (conv.user1_id !== uid && conv.user2_id !== uid) return fail(res, 'Not a participant', 403);
 
     await pool.query('UPDATE messages SET ciphertext_user1 = $1, ciphertext_user2 = $2 WHERE id = $3', [ciphertext_user1, ciphertext_user2, message_id]);
+    broadcastToConversation(msg.conversation_id, uid);
     ok(res);
   } catch (e) { fail(res, 'Internal error', 500); }
 });
@@ -862,6 +898,7 @@ app.post('/api/chat/messages/pin', requireAuth, verifyCsrf, async (req, res) => 
     const conv = cRows[0];
     if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
     await pool.query('INSERT INTO pinned_messages (conversation_id, message_id, pinned_by, pinned_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [msg.conversation_id, msgId, uid, new Date().toISOString()]);
+    broadcastToConversation(msg.conversation_id, uid);
     ok(res);
   } catch (e) { fail(res, 'Internal error', 500); }
 });
@@ -878,6 +915,7 @@ app.post('/api/chat/messages/unpin', requireAuth, verifyCsrf, async (req, res) =
     const conv = cRows[0];
     if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
     await pool.query('DELETE FROM pinned_messages WHERE conversation_id = $1 AND message_id = $2', [msg.conversation_id, msgId]);
+    broadcastToConversation(msg.conversation_id, uid);
     ok(res);
   } catch (e) { fail(res, 'Internal error', 500); }
 });
@@ -912,6 +950,14 @@ app.post('/api/chat/conversations/hide', requireAuth, verifyCsrf, async (req, re
   } catch (e) { fail(res, 'Internal error', 500); }
 });
 
+// ── WS TOKEN ENDPOINT ──
+const wsTokens = new Map();
+app.post('/api/ws/token', requireAuth, (req, res) => {
+  const token = crypto.randomBytes(16).toString('hex');
+  wsTokens.set(token, { userId: req.session.userId, expires: Date.now() + 30000 });
+  ok(res, { token });
+});
+
 // ── SERVE FRONTEND ──
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
@@ -920,10 +966,65 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: 'Internal error' });
 });
 
+// ── WEBSOCKET ──
+const wsClients = new Map(); // conversationId -> Set of ws connections
+
+function broadcastToConversation(conversationId, excludeUserId) {
+  const set = wsClients.get(conversationId);
+  if (!set) return;
+  const msg = JSON.stringify({ type: 'update', conversation_id: conversationId });
+  for (const ws of set) {
+    if (ws.readyState === WebSocket.OPEN && ws._userId !== excludeUserId) {
+      ws.send(msg);
+    }
+  }
+}
+
 // ── START ──
 initDB().then(() => {
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`EHCTA running at http://localhost:${PORT}`);
+  });
+
+  const wss = new WebSocket.Server({ server });
+
+  // Clean up expired WS tokens periodically
+  setInterval(() => {
+    const now = Date.now();
+    for (const [token, data] of wsTokens) {
+      if (data.expires < now) wsTokens.delete(token);
+    }
+  }, 60000);
+
+  wss.on('connection', (ws) => {
+    ws._userId = null;
+    ws._convIds = new Set();
+
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data);
+        if (msg.type === 'auth') {
+          const tokenData = wsTokens.get(msg.token);
+          if (tokenData && tokenData.expires > Date.now()) {
+            ws._userId = tokenData.userId;
+            wsTokens.delete(msg.token);
+            ws.send(JSON.stringify({ type: 'auth_ok' }));
+          }
+        }
+        if (msg.type === 'subscribe' && ws._userId && msg.conversation_id) {
+          ws._convIds.add(msg.conversation_id);
+          if (!wsClients.has(msg.conversation_id)) wsClients.set(msg.conversation_id, new Set());
+          wsClients.get(msg.conversation_id).add(ws);
+        }
+      } catch(e) {}
+    });
+
+    ws.on('close', () => {
+      for (const convId of ws._convIds) {
+        const set = wsClients.get(convId);
+        if (set) { set.delete(ws); if (set.size === 0) wsClients.delete(convId); }
+      }
+    });
   });
 }).catch(err => {
   console.error('Failed to initialize database:', err);

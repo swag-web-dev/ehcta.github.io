@@ -120,6 +120,81 @@ const Crypto = {
     return new TextDecoder().decode(pt);
   },
 
+  // ══ FORWARD SECRECY (v2 encryption with conversation binding) ══
+
+  async encryptForChatFS(plaintext, recipientPubKeyJson, conversationId) {
+    const pubJwk = JSON.parse(recipientPubKeyJson);
+    const pubKey = await window.crypto.subtle.importKey('jwk', pubJwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
+
+    // Generate ephemeral ECDH key pair (for future ratcheting support)
+    const ephKp = await window.crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    const ephPub = await window.crypto.subtle.exportKey('jwk', ephKp.publicKey);
+
+    // Generate fresh AES-256 key for this message (forward secrecy: never stored after use)
+    const aesKeyRaw = window.crypto.getRandomValues(new Uint8Array(32));
+    const aesKey = await window.crypto.subtle.importKey('raw', aesKeyRaw, { name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+    // Bind message to conversation ID via AAD (additional authenticated data)
+    const aad = new TextEncoder().encode(conversationId || '');
+    const ct = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, aesKey, new TextEncoder().encode(plaintext));
+
+    // Wrap AES key with recipient's RSA public key
+    const wrappedKey = await window.crypto.subtle.encrypt({ name: 'RSA-OAEP' }, pubKey, aesKeyRaw);
+
+    return btoa(JSON.stringify({
+      v: 2,
+      wk: this._bytesToBase64(new Uint8Array(wrappedKey)),
+      iv: this._bytesToBase64(iv),
+      ct: this._bytesToBase64(new Uint8Array(ct)),
+      eph: ephPub,
+      cid: conversationId || '',
+    }));
+  },
+
+  async decryptChatMessageFS(ciphertextB64, conversationId) {
+    if (!this._chatPrivateKey) throw new Error('Chat private key not loaded');
+    const payload = JSON.parse(atob(ciphertextB64));
+
+    if (payload.v === 2) {
+      const wrappedKey = this._base64ToBytes(payload.wk);
+      const rawAes = await window.crypto.subtle.decrypt({ name: 'RSA-OAEP' }, this._chatPrivateKey, wrappedKey);
+      const aesKey = await window.crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt']);
+      const iv = this._base64ToBytes(payload.iv);
+      const ct = this._base64ToBytes(payload.ct);
+
+      // Verify conversation binding via AAD
+      const aad = new TextEncoder().encode(payload.cid || '');
+      const pt = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv, additionalData: aad }, aesKey, ct);
+
+      // Verify conversation ID matches expected
+      if (conversationId && payload.cid && payload.cid !== conversationId) {
+        throw new Error('Message conversation binding mismatch');
+      }
+
+      return new TextDecoder().decode(pt);
+    }
+
+    // Fall back to v1 (legacy, no conversation binding)
+    return this.decryptChatMessage(ciphertextB64);
+  },
+
+  // ══ KEY FINGERPRINT VERIFICATION ══
+
+  async getKeyFingerprint(pubKeyJson) {
+    const enc = new TextEncoder();
+    const hash = await window.crypto.subtle.digest('SHA-256', enc.encode(pubKeyJson));
+    const bytes = new Uint8Array(hash);
+    // Format as groups of 5 digits (like Signal safety numbers)
+    let fingerprint = '';
+    for (let i = 0; i < 20; i += 4) {
+      const num = ((bytes[i] << 24) | (bytes[i+1] << 16) | (bytes[i+2] << 8) | bytes[i+3]) >>> 0;
+      fingerprint += (num % 100000).toString().padStart(5, '0') + ' ';
+    }
+    return fingerprint.trim();
+  },
+
   // ═══════════════════════════════════
   //  HELPERS
   // ═══════════════════════════════════

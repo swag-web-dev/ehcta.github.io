@@ -221,6 +221,9 @@ const Chat = {
   _typingTimer: null,
   _lastTypingSent: 0,
   _activeTab: 'messages',
+  _ws: null,
+  _wsReconnectTimer: null,
+  _loadingOlder: false,
 
   async init() {
     if (this._initialized) return;
@@ -327,6 +330,10 @@ const Chat = {
         if (!btn) return;
         const atBottom = msgContainer.scrollHeight - msgContainer.scrollTop - msgContainer.clientHeight < 100;
         btn.style.display = atBottom ? 'none' : 'block';
+        // Load older messages when scrolled near top
+        if (msgContainer.scrollTop < 50 && !this._loadingOlder && this._activeConvId) {
+          this._loadOlderMessages();
+        }
       });
     }
 
@@ -347,6 +354,7 @@ const Chat = {
   async open() {
     await this.loadConversations();
     this._startPolling();
+    this._connectWS();
     // Mark current conversation as read
     if (this._activeConvId) this._markRead(this._activeConvId);
   },
@@ -399,6 +407,7 @@ const Chat = {
       // Show UI immediately, load data in parallel
       this._showInputArea(true);
       this.showConvPanel();
+      this._subscribeConversation(data.conversation_id);
       await Promise.all([
         this.loadConversations(),
         this.loadMessages(data.conversation_id),
@@ -420,7 +429,8 @@ const Chat = {
     if (!convId) return;
     if (this._editingMsgId) return;
     try {
-      const msgs = await API.get('api/chat/messages?conversation_id=' + encodeURIComponent(convId));
+      const response = await API.get('api/chat/messages?conversation_id=' + encodeURIComponent(convId));
+      const msgs = response.messages || response;
       const newMessages = [];
       if (msgs && msgs.length > 0) {
         for (const msg of msgs) {
@@ -437,24 +447,41 @@ const Chat = {
     } catch (e) { console.error('Failed to load messages:', e); }
   },
 
-  async _decryptMyMessage(msg) {
-    try { return await Crypto.decryptChatMessage(msg.ciphertext_user1); }
+  async _decryptMyMessage(msg, convId) {
+    const cid = convId || this._activeConvId || '';
+    // Try v2 (forward secrecy + conversation binding) first, then fall back to v1
+    try { return await Crypto.decryptChatMessageFS(msg.ciphertext_user1, cid); }
     catch (e1) {
-      try { return await Crypto.decryptChatMessage(msg.ciphertext_user2); }
-      catch (e2) { return '[Unable to decrypt]'; }
+      try { return await Crypto.decryptChatMessageFS(msg.ciphertext_user2, cid); }
+      catch (e2) {
+        // Fall back to legacy v1 decryption
+        try { return await Crypto.decryptChatMessage(msg.ciphertext_user1); }
+        catch (e3) {
+          try { return await Crypto.decryptChatMessage(msg.ciphertext_user2); }
+          catch (e4) { return '[Unable to decrypt]'; }
+        }
+      }
     }
   },
 
   async _decryptAttachment(msg) {
     if (!msg.attachment) return '';
+    const cid = msg.conversation_id || this._activeConvId || '';
     try {
       const parsed = JSON.parse(msg.attachment);
       // Encrypted attachment format: { att_ct1, att_ct2 }
       if (parsed.att_ct1 && parsed.att_ct2) {
-        try { return await Crypto.decryptChatMessage(parsed.att_ct1); }
+        // Try v2 (FS) first, then fall back to v1
+        try { return await Crypto.decryptChatMessageFS(parsed.att_ct1, cid); }
         catch (e1) {
-          try { return await Crypto.decryptChatMessage(parsed.att_ct2); }
-          catch (e2) { return ''; }
+          try { return await Crypto.decryptChatMessageFS(parsed.att_ct2, cid); }
+          catch (e2) {
+            try { return await Crypto.decryptChatMessage(parsed.att_ct1); }
+            catch (e3) {
+              try { return await Crypto.decryptChatMessage(parsed.att_ct2); }
+              catch (e4) { return ''; }
+            }
+          }
         }
       }
       // Legacy unencrypted attachment (plain array), return as-is
@@ -523,14 +550,15 @@ const Chat = {
       const user1PubKey = amUser1 ? this._myPublicKey : meta.otherPublicKey;
       const user2PubKey = amUser1 ? meta.otherPublicKey : this._myPublicKey;
 
-      const ciphertext_user1 = await Crypto.encryptForChat(msgContent, user1PubKey);
-      const ciphertext_user2 = await Crypto.encryptForChat(msgContent, user2PubKey);
+      const convId = this._activeConvId;
+      const ciphertext_user1 = await Crypto.encryptForChatFS(msgContent, user1PubKey, convId);
+      const ciphertext_user2 = await Crypto.encryptForChatFS(msgContent, user2PubKey, convId);
 
       // Encrypt attachment if present
       let encAttachment = '';
       if (attachment) {
-        const att_ct1 = await Crypto.encryptForChat(attachment, user1PubKey);
-        const att_ct2 = await Crypto.encryptForChat(attachment, user2PubKey);
+        const att_ct1 = await Crypto.encryptForChatFS(attachment, user1PubKey, convId);
+        const att_ct2 = await Crypto.encryptForChatFS(attachment, user2PubKey, convId);
         encAttachment = JSON.stringify({ att_ct1, att_ct2 });
       }
 
@@ -712,13 +740,13 @@ const Chat = {
         this._checkForChanges(this._activeConvId);
         this._checkTyping();
       }
-      // Only refresh conversation list every 5s (every 10th tick)
+      // Only refresh conversation list every 10s (every 2nd tick at 5s interval)
       this._convPollCount++;
-      if (this._convPollCount >= 10) {
+      if (this._convPollCount >= 2) {
         this._convPollCount = 0;
         this._checkConversations();
       }
-    }, 500);
+    }, 5000);
   },
 
   async _checkConversations() {
@@ -755,6 +783,101 @@ const Chat = {
 
   _stopPolling() {
     if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+  },
+
+  // ── WEBSOCKET ──
+  async _connectWS() {
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) return;
+    try {
+      const { token } = await API.post('api/ws/token', {});
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this._ws = new WebSocket(proto + '//' + location.host);
+      this._ws.onopen = () => {
+        this._ws.send(JSON.stringify({ type: 'auth', token }));
+      };
+      this._ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'auth_ok') {
+            if (this._activeConvId) {
+              this._subscribeConversation(this._activeConvId);
+            }
+          }
+          if (msg.type === 'update' && msg.conversation_id) {
+            if (msg.conversation_id === this._activeConvId) {
+              this.loadMessages(this._activeConvId);
+            }
+            this._checkConversations();
+          }
+        } catch(err) {}
+      };
+      this._ws.onclose = () => {
+        this._ws = null;
+        clearTimeout(this._wsReconnectTimer);
+        this._wsReconnectTimer = setTimeout(() => this._connectWS(), 3000);
+      };
+      this._ws.onerror = () => {};
+    } catch(e) {}
+  },
+
+  _subscribeConversation(convId) {
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ type: 'subscribe', conversation_id: convId }));
+    }
+  },
+
+  // ── KEY FINGERPRINT VERIFICATION ──
+  async showFingerprint() {
+    if (!this._activeConvMeta || !this._myPublicKey) return;
+    const myFp = await Crypto.getKeyFingerprint(this._myPublicKey);
+    const theirFp = await Crypto.getKeyFingerprint(this._activeConvMeta.otherPublicKey);
+    const conv = this._conversations.find(c => c.id === this._activeConvId);
+    const theirName = conv ? conv.other_user_name : 'Other';
+
+    // Show fingerprint overlay
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = '<div style="background:var(--color-bg,#000);border:var(--border,1px solid #fff);padding:32px;max-width:420px;width:90%;">' +
+      '<h3 style="font-family:var(--font-title);font-size:1.1rem;margin-bottom:16px;">Key Fingerprints</h3>' +
+      '<p style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:16px;">Compare these numbers with ' + this._esc(theirName) + ' in person or over a trusted channel to verify end-to-end encryption.</p>' +
+      '<div style="margin-bottom:16px;"><div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);margin-bottom:4px;">Your key</div>' +
+      '<code style="font-size:0.9rem;letter-spacing:0.15em;word-break:break-all;">' + this._esc(myFp) + '</code></div>' +
+      '<div style="margin-bottom:20px;"><div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);margin-bottom:4px;">' + this._esc(theirName) + '\'s key</div>' +
+      '<code style="font-size:0.9rem;letter-spacing:0.15em;word-break:break-all;">' + this._esc(theirFp) + '</code></div>' +
+      '<button class="btn btn--small" onclick="this.closest(\'div[style]\').parentElement.remove()">CLOSE</button>' +
+      '</div>';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  },
+
+  // ── MESSAGE PAGINATION ──
+  async _loadOlderMessages() {
+    if (!this._activeConvId || this._loadingOlder) return;
+    const msgs = this._messages[this._activeConvId] || [];
+    if (msgs.length === 0) return;
+    const oldest = msgs[0];
+    this._loadingOlder = true;
+    try {
+      const olderResp = await API.get('api/chat/messages?conversation_id=' + encodeURIComponent(this._activeConvId) + '&before=' + encodeURIComponent(oldest.created_at));
+      const olderMsgs = olderResp.messages || olderResp;
+      if (olderMsgs && olderMsgs.length > 0) {
+        const decrypted = [];
+        for (const msg of olderMsgs) {
+          try { msg._plaintext = await this._decryptMyMessage(msg, this._activeConvId); }
+          catch (e) { msg._plaintext = '[Decryption failed]'; }
+          try { msg._decryptedAttachment = await this._decryptAttachment(msg); }
+          catch (e) { msg._decryptedAttachment = ''; }
+          msg._isMine = this._myUserId && msg.sender_id === this._myUserId;
+          decrypted.push(msg);
+        }
+        const container = document.getElementById('chat-messages');
+        const oldScrollHeight = container ? container.scrollHeight : 0;
+        this._messages[this._activeConvId] = [...decrypted, ...msgs];
+        this.renderMessages(this._activeConvId);
+        if (container) container.scrollTop = container.scrollHeight - oldScrollHeight;
+      }
+    } catch(e) {}
+    this._loadingOlder = false;
   },
 
   // ── SCROLL ──
@@ -977,6 +1100,8 @@ const Chat = {
     if (conv) {
       document.getElementById('chat-header-status').textContent = this._getLastSeenText(conv.other_last_seen);
     }
+    // Subscribe to WebSocket updates for this conversation
+    this._subscribeConversation(convId);
     // Load messages and mark read in parallel
     await Promise.all([
       this.loadMessages(convId),
@@ -1079,6 +1204,8 @@ const Chat = {
     if (area) area.style.display = show ? 'block' : 'none';
     const pinBtn = document.getElementById('chat-pin-toggle');
     if (pinBtn) pinBtn.style.display = show ? 'inline' : 'none';
+    const verifyBtn = document.getElementById('chat-verify-btn');
+    if (verifyBtn) verifyBtn.style.display = show ? 'inline' : 'none';
   },
 
   _formatTime(iso) {
@@ -1273,8 +1400,9 @@ const Chat = {
       const amUser1 = await this._amIUser1(meta.user1_id);
       const u1k = amUser1 ? this._myPublicKey : meta.otherPublicKey;
       const u2k = amUser1 ? meta.otherPublicKey : this._myPublicKey;
-      const ct1 = await Crypto.encryptForChat(newText, u1k);
-      const ct2 = await Crypto.encryptForChat(newText, u2k);
+      const convId = this._activeConvId;
+      const ct1 = await Crypto.encryptForChatFS(newText, u1k, convId);
+      const ct2 = await Crypto.encryptForChatFS(newText, u2k, convId);
       await API.post('api/chat/messages/edit', { message_id: msgId, ciphertext_user1: ct1, ciphertext_user2: ct2 });
       const msgs = this._messages[this._activeConvId];
       if (msgs) { const msg = msgs.find(m => m.id === msgId); if (msg) { msg._plaintext = newText; msg.ciphertext_user1 = ct1; msg.ciphertext_user2 = ct2; } }

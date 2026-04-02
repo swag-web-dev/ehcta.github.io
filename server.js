@@ -716,8 +716,8 @@ app.post('/api/chat/conversations/start', requireAuth, verifyCsrf, async (req, r
     } else {
       // Unhide for both users so the request is visible again
       await pool.query('DELETE FROM hidden_conversations WHERE conversation_id = $1', [conv.id]);
-      // If it was previously accepted/declined, reset to pending with new initiator
-      if (conv.status !== 'pending') {
+      // If it was declined, reset to pending so the other user sees the new request
+      if (conv.status === 'declined' || conv.status === 'denied') {
         await pool.query('UPDATE conversations SET status = $1, initiated_by = $2 WHERE id = $3', ['pending', uid, conv.id]);
         conv.status = 'pending';
       }
@@ -1096,7 +1096,10 @@ function broadcastToConversation(conversationId, excludeUserId) {
 }
 
 // ── START ──
-initDB().then(() => {
+initDB().then(async () => {
+  // Fix conversations stuck as 'pending' that have messages (they were accepted but got reset)
+  await pool.query("UPDATE conversations SET status = 'accepted' WHERE status = 'pending' AND id IN (SELECT DISTINCT conversation_id FROM messages)").catch(() => {});
+
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`EHCTA running at http://localhost:${PORT}`);
   });

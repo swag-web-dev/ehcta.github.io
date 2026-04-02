@@ -751,6 +751,21 @@ textarea.input {
   }
 }
 
+/* ── APP VIEW ── */
+#app-view {
+  height: 100%;
+  overflow: hidden;
+}
+#main-content {
+  height: 100%;
+  overflow: hidden;
+}
+.main--settings {
+  margin-left: 220px !important;
+  padding: 48px !important;
+  overflow-y: auto !important;
+}
+
 /* ── CHAT LAYOUT ── */
 .chat-layout {
   display: grid;
@@ -970,9 +985,10 @@ textarea.input {
   }
 
   /* Settings content full width on mobile */
-  #main-content {
+  .main--settings {
     margin-left: 0 !important;
     padding: var(--spacing-md) !important;
+    overflow-y: auto !important;
   }
 
   /* Profile grids stack to 1 column */
@@ -1077,8 +1093,9 @@ textarea.input {
 
 /* Override the JS-set margin-left on settings for mobile */
 @media (max-width: 900px) {
-  #main-content {
+  .main--settings {
     margin-left: 0 !important;
+    padding: var(--spacing-md) !important;
   }
   #settings-nav {
     position: relative !important;

@@ -50,13 +50,6 @@ const App = {
   showApp() {
     document.getElementById('login-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
-    document.getElementById('app-view').style.height = '100%';
-    document.getElementById('app-view').style.overflow = 'hidden';
-    document.getElementById('main-content').style.marginLeft = '0';
-    document.getElementById('main-content').style.padding = '0';
-    document.getElementById('main-content').style.maxWidth = '100%';
-    document.getElementById('main-content').style.height = '100%';
-    document.getElementById('main-content').style.overflow = 'hidden';
     resetInactivity();
 
     if (window.Lenis) new Lenis({ autoRaf: true });
@@ -134,14 +127,11 @@ const App = {
   },
 
   enterSettings() {
-    // Show settings nav, hide chat, show settings section
     document.getElementById('settings-nav').style.display = 'flex';
     document.getElementById('chat-section').style.display = 'none';
     document.getElementById('settings-section').classList.add('tab-section--active');
-    document.getElementById('main-content').style.marginLeft = '220px';
-    document.getElementById('main-content').style.padding = '48px 48px';
-    document.getElementById('main-content').style.overflow = 'auto';
-    document.getElementById('main-content').style.height = '100%';
+    document.getElementById('app-view').classList.add('app-view--settings');
+    document.getElementById('main-content').classList.add('main--settings');
     this.showSettingsSection('settings-profile-section');
     document.querySelectorAll('#nav-settings-tabs .nav__tab').forEach(b => b.classList.remove('nav__tab--active'));
     document.querySelector('#nav-settings-tabs .nav__tab[data-settings-section="settings-profile-section"]').classList.add('nav__tab--active');
@@ -149,13 +139,11 @@ const App = {
   },
 
   exitSettings() {
-    // Hide settings nav, show chat
     document.getElementById('settings-nav').style.display = 'none';
     document.getElementById('chat-section').style.display = 'block';
     document.getElementById('settings-section').classList.remove('tab-section--active');
-    document.getElementById('main-content').style.marginLeft = '0';
-    document.getElementById('main-content').style.padding = '0';
-    document.getElementById('main-content').style.overflow = 'hidden';
+    document.getElementById('app-view').classList.remove('app-view--settings');
+    document.getElementById('main-content').classList.remove('main--settings');
     Chat.open();
   },
 

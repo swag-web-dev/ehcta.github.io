@@ -447,44 +447,25 @@ const Chat = {
     } catch (e) { console.error('Failed to load messages:', e); }
   },
 
-  async _decryptMyMessage(msg, convId) {
-    const cid = convId || this._activeConvId || '';
-    // Try all decryption methods: v2 user1, v2 user2, v1 user1, v1 user2
-    const attempts = [
-      () => Crypto.decryptChatMessageFS(msg.ciphertext_user1, cid),
-      () => Crypto.decryptChatMessageFS(msg.ciphertext_user2, cid),
-      () => Crypto.decryptChatMessageFS(msg.ciphertext_user1, ''),
-      () => Crypto.decryptChatMessageFS(msg.ciphertext_user2, ''),
-      () => Crypto.decryptChatMessage(msg.ciphertext_user1),
-      () => Crypto.decryptChatMessage(msg.ciphertext_user2),
-    ];
-    for (const attempt of attempts) {
-      try { return await attempt(); } catch (e) {}
+  async _decryptMyMessage(msg) {
+    try { return await Crypto.decryptChatMessage(msg.ciphertext_user1); }
+    catch (e1) {
+      try { return await Crypto.decryptChatMessage(msg.ciphertext_user2); }
+      catch (e2) { return '[Unable to decrypt]'; }
     }
-    return '[Unable to decrypt]';
   },
 
   async _decryptAttachment(msg) {
     if (!msg.attachment) return '';
-    const cid = msg.conversation_id || this._activeConvId || '';
     try {
       const parsed = JSON.parse(msg.attachment);
-      // Encrypted attachment format: { att_ct1, att_ct2 }
       if (parsed.att_ct1 && parsed.att_ct2) {
-        // Try v2 (FS) first, then fall back to v1
-        try { return await Crypto.decryptChatMessageFS(parsed.att_ct1, cid); }
+        try { return await Crypto.decryptChatMessage(parsed.att_ct1); }
         catch (e1) {
-          try { return await Crypto.decryptChatMessageFS(parsed.att_ct2, cid); }
-          catch (e2) {
-            try { return await Crypto.decryptChatMessage(parsed.att_ct1); }
-            catch (e3) {
-              try { return await Crypto.decryptChatMessage(parsed.att_ct2); }
-              catch (e4) { return ''; }
-            }
-          }
+          try { return await Crypto.decryptChatMessage(parsed.att_ct2); }
+          catch (e2) { return ''; }
         }
       }
-      // Legacy unencrypted attachment (plain array), return as-is
       return msg.attachment;
     } catch (e) {
       return msg.attachment;
@@ -551,28 +532,15 @@ const Chat = {
       const user2PubKey = amUser1 ? meta.otherPublicKey : this._myPublicKey;
 
       const convId = this._activeConvId;
-      let ciphertext_user1, ciphertext_user2;
-      try {
-        ciphertext_user1 = await Crypto.encryptForChatFS(msgContent, user1PubKey, convId);
-        ciphertext_user2 = await Crypto.encryptForChatFS(msgContent, user2PubKey, convId);
-      } catch (fsErr) {
-        console.warn('FS encryption failed, falling back to v1:', fsErr);
-        ciphertext_user1 = await Crypto.encryptForChat(msgContent, user1PubKey);
-        ciphertext_user2 = await Crypto.encryptForChat(msgContent, user2PubKey);
-      }
+      const ciphertext_user1 = await Crypto.encryptForChat(msgContent, user1PubKey);
+      const ciphertext_user2 = await Crypto.encryptForChat(msgContent, user2PubKey);
 
       // Encrypt attachment if present
       let encAttachment = '';
       if (attachment) {
-        try {
-          const att_ct1 = await Crypto.encryptForChatFS(attachment, user1PubKey, convId);
-          const att_ct2 = await Crypto.encryptForChatFS(attachment, user2PubKey, convId);
-          encAttachment = JSON.stringify({ att_ct1, att_ct2 });
-        } catch (attErr) {
-          const att_ct1 = await Crypto.encryptForChat(attachment, user1PubKey);
-          const att_ct2 = await Crypto.encryptForChat(attachment, user2PubKey);
-          encAttachment = JSON.stringify({ att_ct1, att_ct2 });
-        }
+        const att_ct1 = await Crypto.encryptForChat(attachment, user1PubKey);
+        const att_ct2 = await Crypto.encryptForChat(attachment, user2PubKey);
+        encAttachment = JSON.stringify({ att_ct1, att_ct2 });
       }
 
       // Include conversation TTL if set
@@ -1227,8 +1195,6 @@ const Chat = {
     if (area) area.style.display = show ? 'block' : 'none';
     const pinBtn = document.getElementById('chat-pin-toggle');
     if (pinBtn) pinBtn.style.display = show ? 'inline' : 'none';
-    const verifyBtn = document.getElementById('chat-verify-btn');
-    if (verifyBtn) verifyBtn.style.display = show ? 'inline' : 'none';
   },
 
   _formatTime(iso) {
@@ -1598,8 +1564,8 @@ const Chat = {
       const u1k = amUser1 ? this._myPublicKey : meta.otherPublicKey;
       const u2k = amUser1 ? meta.otherPublicKey : this._myPublicKey;
       const convId = this._activeConvId;
-      const ct1 = await Crypto.encryptForChatFS(newText, u1k, convId);
-      const ct2 = await Crypto.encryptForChatFS(newText, u2k, convId);
+      const ct1 = await Crypto.encryptForChat(newText, u1k);
+      const ct2 = await Crypto.encryptForChat(newText, u2k);
       await API.post('api/chat/messages/edit', { message_id: msgId, ciphertext_user1: ct1, ciphertext_user2: ct2 });
       const msgs = this._messages[this._activeConvId];
       if (msgs) { const msg = msgs.find(m => m.id === msgId); if (msg) { msg._plaintext = newText; msg.ciphertext_user1 = ct1; msg.ciphertext_user2 = ct2; } }

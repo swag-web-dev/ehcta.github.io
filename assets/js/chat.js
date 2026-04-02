@@ -1024,6 +1024,7 @@ const Chat = {
     try {
       await API.post('api/chat/conversations/accept', { conversation_id: convId });
       Toast.show('Request accepted');
+      this._activeTab = 'messages';
       await this.loadConversations();
       const conv = this._conversations.find(c => c.id === convId);
       if (conv) {

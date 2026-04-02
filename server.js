@@ -142,32 +142,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// ── GLOBAL API RATE LIMITER ──
+// Rate limit map (used only for login attempts)
 const apiRateLimits = new Map();
-const API_RATE_LIMIT = 100;
-const API_RATE_WINDOW = 60 * 1000;
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of apiRateLimits) {
-    if (now - entry.windowStart > API_RATE_WINDOW) apiRateLimits.delete(key);
-  }
-}, 5 * 60 * 1000);
-
-app.use('/api/', (req, res, next) => {
-  const ip = req.ip || 'unknown';
-  const now = Date.now();
-  let entry = apiRateLimits.get(ip);
-  if (!entry || now - entry.windowStart > API_RATE_WINDOW) {
-    entry = { windowStart: now, count: 0 };
-    apiRateLimits.set(ip, entry);
-  }
-  entry.count++;
-  if (entry.count > API_RATE_LIMIT) {
-    return res.status(429).json({ success: false, error: 'Too many requests. Please wait a moment.' });
-  }
-  next();
-});
 
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
@@ -185,18 +161,6 @@ function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
   // Update last_seen
   pool.query("UPDATE users SET last_seen = $1 WHERE id = $2", [new Date().toISOString(), req.session.userId]).catch(() => {});
-  // Per-user rate limiting
-  const now = Date.now();
-  const userRateKey = 'user_' + req.session.userId;
-  let userEntry = apiRateLimits.get(userRateKey);
-  if (!userEntry || now - userEntry.windowStart > API_RATE_WINDOW) {
-    userEntry = { windowStart: now, count: 0 };
-    apiRateLimits.set(userRateKey, userEntry);
-  }
-  userEntry.count++;
-  if (userEntry.count > API_RATE_LIMIT) {
-    return res.status(429).json({ success: false, error: 'Too many requests.' });
-  }
   next();
 }
 function verifyCsrf(req, res, next) {

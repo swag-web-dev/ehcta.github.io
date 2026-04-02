@@ -27,14 +27,14 @@ const Settings = {
     document.getElementById('totp-disable-confirm-btn').addEventListener('click', () => this.disableTotp());
     document.getElementById('totp-disable-cancel-btn').addEventListener('click', () => this.hideTotpDisable());
 
-    // Appearance controls
-    document.getElementById('settings-sidebar-pos').addEventListener('change', (e) => {
-      if (e.target.value === 'right') {
-        document.documentElement.setAttribute('data-sidebar', 'right');
-      } else {
-        document.documentElement.removeAttribute('data-sidebar');
-      }
-      localStorage.setItem('ehcta-sidebar', e.target.value);
+    // Auto-lock timeout
+    const autolockSelect = document.getElementById('settings-autolock');
+    const savedAutolock = localStorage.getItem('ehcta-autolock') || '300000';
+    autolockSelect.value = savedAutolock;
+    autolockSelect.addEventListener('change', () => {
+      localStorage.setItem('ehcta-autolock', autolockSelect.value);
+      resetInactivity();
+      Toast.show('Auto-lock timeout updated');
     });
 
     // Restore appearance settings
@@ -42,12 +42,6 @@ const Settings = {
     if (savedTheme === 'light') {
       document.documentElement.setAttribute('data-theme', 'light');
       this.themeToggle.classList.add('toggle--active');
-    }
-
-    const savedSidebar = localStorage.getItem('ehcta-sidebar') || 'left';
-    if (savedSidebar === 'right') {
-      document.documentElement.setAttribute('data-sidebar', 'right');
-      document.getElementById('settings-sidebar-pos').value = 'right';
     }
 
     // Header font (FontPicker)

@@ -1527,7 +1527,7 @@ const Chat = {
     const msgs = this._messages[this._activeConvId] || [];
     let html = '';
     const urlRegex = /(https?:\/\/[^\s<]+)/gi;
-    const phoneRegex = /(\+?\d[\d\s\-()]{6,}\d)/g;
+    const phoneRegex = /(?:^|\s)((?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4})(?=\s|$|[,.])/gm;
     const senderMeta = (m) => `<div style="font-size:0.65rem;color:var(--color-text-muted);margin-bottom:3px;">${this._esc(this._msgSender(m))} &middot; ${this._formatTimeShort(m.created_at)}</div>`;
 
     if (type === 'photos') {

@@ -87,10 +87,49 @@ async function initDB() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, created_at)`);
 }
 
-// ── MIDDLEWARE ──
-if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+// Session secret from env or generate a stable one
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
-app.use(express.json({ limit: '50mb' }));
+// ── TOTP ENCRYPTION KEY (for encrypting TOTP secrets at rest) ──
+const TOTP_KEY = process.env.TOTP_ENCRYPTION_KEY || crypto.createHash('sha256').update(SESSION_SECRET + '_totp').digest();
+
+function encryptTotp(secret) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', TOTP_KEY, iv);
+  let enc = cipher.update(secret, 'utf8', 'hex');
+  enc += cipher.final('hex');
+  const tag = cipher.getAuthTag().toString('hex');
+  return iv.toString('hex') + ':' + enc + ':' + tag;
+}
+
+function decryptTotp(stored) {
+  if (!stored || !stored.includes(':')) return stored; // legacy plaintext fallback
+  const [ivHex, encHex, tagHex] = stored.split(':');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', TOTP_KEY, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+  let dec = decipher.update(encHex, 'hex', 'utf8');
+  dec += decipher.final('utf8');
+  return dec;
+}
+
+// ── MIDDLEWARE ──
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', true);
+
+app.use(express.json({ limit: '10mb' }));
+
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'");
+  }
+  next();
+});
+
 app.use((req, res, next) => {
   if (req.url.startsWith('/api/')) console.log(`${req.method} ${req.url}`);
   next();
@@ -124,9 +163,6 @@ app.use('/api/', (req, res, next) => {
 });
 
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
-
-// Session secret from env or generate a stable one
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
 app.use(session({
   secret: SESSION_SECRET,
@@ -211,8 +247,16 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const phrase = (req.body.seed_phrase || '').trim();
-    if (!phrase) return fail(res, 'Seed phrase is required');
+    // Accept pre-hashed seed (client-side hashing) or raw phrase (legacy)
+    let userId;
+    if (req.body.seed_hash) {
+      userId = req.body.seed_hash;
+      if (!/^[a-f0-9]{64}$/.test(userId)) return fail(res, 'Invalid seed hash');
+    } else {
+      const phrase = (req.body.seed_phrase || '').trim();
+      if (!phrase) return fail(res, 'Seed phrase is required');
+      userId = hashSeed(phrase);
+    }
     const ip = crypto.createHash('sha256').update(req.ip || 'unknown').digest('hex');
     const now = Math.floor(Date.now() / 1000);
 
@@ -225,8 +269,6 @@ app.post('/api/auth/login', async (req, res) => {
     if (blockedUntil && now < blockedUntil) {
       return fail(res, 'Too many attempts. Try again later.', 429);
     }
-
-    const userId = hashSeed(phrase);
     const userRes = await pool.query('SELECT id, salt, pin_hash, totp_secret, pin_failures FROM users WHERE id = $1', [userId]);
     const user = userRes.rows[0];
 
@@ -241,7 +283,8 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const needsPin = !!user.pin_hash;
-    const needsTotp = !!user.totp_secret;
+    const totpRaw = user.totp_secret ? decryptTotp(user.totp_secret) : '';
+    const needsTotp = !!totpRaw;
     const pin = (req.body.pin || '').trim();
     const totpToken = (req.body.totp_token || '').trim();
 
@@ -251,10 +294,16 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (needsPin) {
       if (!pin) return fail(res, 'PIN is required', 401);
+      // Rate limit PIN attempts: enforce 5-second delay between attempts
+      const { rows: lastFailRows } = await pool.query("SELECT created_at FROM audit_log WHERE user_id = $1 AND action = 'pin_fail' ORDER BY created_at DESC LIMIT 1", [userId]);
+      if (lastFailRows.length && (Date.now() - new Date(lastFailRows[0].created_at).getTime()) < 5000) {
+        return fail(res, 'Too fast. Wait a few seconds before trying again.', 429);
+      }
       const pinHash = crypto.pbkdf2Sync(pin, user.salt, 100000, 64, 'sha512').toString('hex');
       if (pinHash !== user.pin_hash) {
         const failures = (user.pin_failures || 0) + 1;
         await pool.query('UPDATE users SET pin_failures = $1 WHERE id = $2', [failures, userId]);
+        await auditLog(userId, 'pin_fail', 'Attempt ' + failures);
         if (failures >= 3) {
           // Actually wipe: hide all conversations and clear chat keys
           const { rows: convRows } = await pool.query('SELECT id FROM conversations WHERE user1_id = $1 OR user2_id = $1', [userId]);
@@ -273,7 +322,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (needsTotp) {
       if (!totpToken) return fail(res, 'Authenticator code is required', 401);
-      const totp = new TOTP({ secret: Secret.fromBase32(user.totp_secret), digits: 6, period: 30 });
+      const totp = new TOTP({ secret: Secret.fromBase32(totpRaw), digits: 6, period: 30 });
       const delta = totp.validate({ token: totpToken, window: 1 });
       if (delta === null) return fail(res, 'Invalid authenticator code', 401);
     }
@@ -435,7 +484,7 @@ app.post('/api/settings/totp-confirm', requireAuth, verifyCsrf, async (req, res)
     const totp = new TOTP({ secret: Secret.fromBase32(pendingSecret), digits: 6, period: 30 });
     const delta = totp.validate({ token, window: 1 });
     if (delta !== null) {
-      await pool.query('UPDATE users SET totp_secret = $1 WHERE id = $2', [pendingSecret, req.session.userId]);
+      await pool.query('UPDATE users SET totp_secret = $1 WHERE id = $2', [encryptTotp(pendingSecret), req.session.userId]);
       delete req.session.pendingTotpSecret;
       await auditLog(req.session.userId, 'totp_enable', 'TOTP enabled');
       ok(res);
@@ -450,7 +499,8 @@ app.post('/api/settings/totp-disable', requireAuth, verifyCsrf, async (req, res)
     const token = (req.body.token || '').trim();
     const { rows } = await pool.query('SELECT totp_secret FROM users WHERE id = $1', [req.session.userId]);
     if (!rows[0] || !rows[0].totp_secret) return fail(res, 'TOTP is not enabled');
-    const totp = new TOTP({ secret: Secret.fromBase32(rows[0].totp_secret), digits: 6, period: 30 });
+    const totpDecrypted = decryptTotp(rows[0].totp_secret);
+    const totp = new TOTP({ secret: Secret.fromBase32(totpDecrypted), digits: 6, period: 30 });
     const delta = totp.validate({ token, window: 1 });
     if (delta !== null) {
       await pool.query("UPDATE users SET totp_secret = '' WHERE id = $1", [req.session.userId]);
@@ -468,7 +518,8 @@ app.post('/api/settings/regen-seed', requireAuth, verifyCsrf, async (req, res) =
     const token = (req.body.totp_token || '').trim();
     const { rows: uRows } = await pool.query('SELECT totp_secret FROM users WHERE id = $1', [uid]);
     if (!uRows[0] || !uRows[0].totp_secret) return fail(res, 'Two-factor authentication must be enabled');
-    const totp = new TOTP({ secret: Secret.fromBase32(uRows[0].totp_secret), digits: 6, period: 30 });
+    const regenTotpRaw = decryptTotp(uRows[0].totp_secret);
+    const totp = new TOTP({ secret: Secret.fromBase32(regenTotpRaw), digits: 6, period: 30 });
     const delta = totp.validate({ token, window: 1 });
     if (delta === null) return fail(res, 'Invalid authenticator code', 401);
 
@@ -479,19 +530,29 @@ app.post('/api/settings/regen-seed', requireAuth, verifyCsrf, async (req, res) =
     const { rows: existRows } = await pool.query('SELECT id FROM users WHERE id = $1', [newUserId]);
     if (existRows.length) return fail(res, 'Collision, try again');
 
-    const { rows: oldRows } = await pool.query('SELECT * FROM users WHERE id = $1', [uid]);
-    const oldUser = oldRows[0];
-
-    await pool.query(
-      'INSERT INTO users (id, display_name, salt, settings, pin_hash, totp_secret, unique_id, chat_public_key, chat_private_key_enc, chat_private_key_iv, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
-      [newUserId, oldUser.display_name, newSalt, oldUser.settings, oldUser.pin_hash||'', oldUser.totp_secret||'', oldUser.unique_id||'', oldUser.chat_public_key||'', oldUser.chat_private_key_enc||'', oldUser.chat_private_key_iv||'', oldUser.created_at]
-    );
-    await pool.query('UPDATE audit_log SET user_id = $1 WHERE user_id = $2', [newUserId, uid]);
-    await pool.query('UPDATE conversations SET user1_id = $1 WHERE user1_id = $2', [newUserId, uid]);
-    await pool.query('UPDATE conversations SET user2_id = $1 WHERE user2_id = $2', [newUserId, uid]);
-    await pool.query('UPDATE conversations SET initiated_by = $1 WHERE initiated_by = $2', [newUserId, uid]);
-    await pool.query('UPDATE messages SET sender_id = $1 WHERE sender_id = $2', [newUserId, uid]);
-    await pool.query('DELETE FROM users WHERE id = $1', [uid]);
+    // Use a transaction to prevent race conditions
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: oldRows } = await client.query('SELECT * FROM users WHERE id = $1', [uid]);
+      const oldUser = oldRows[0];
+      await client.query(
+        'INSERT INTO users (id, display_name, salt, settings, pin_hash, totp_secret, unique_id, chat_public_key, chat_private_key_enc, chat_private_key_iv, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+        [newUserId, oldUser.display_name, newSalt, oldUser.settings, oldUser.pin_hash||'', oldUser.totp_secret||'', oldUser.unique_id||'', oldUser.chat_public_key||'', oldUser.chat_private_key_enc||'', oldUser.chat_private_key_iv||'', oldUser.created_at]
+      );
+      await client.query('UPDATE audit_log SET user_id = $1 WHERE user_id = $2', [newUserId, uid]);
+      await client.query('UPDATE conversations SET user1_id = $1 WHERE user1_id = $2', [newUserId, uid]);
+      await client.query('UPDATE conversations SET user2_id = $1 WHERE user2_id = $2', [newUserId, uid]);
+      await client.query('UPDATE conversations SET initiated_by = $1 WHERE initiated_by = $2', [newUserId, uid]);
+      await client.query('UPDATE messages SET sender_id = $1 WHERE sender_id = $2', [newUserId, uid]);
+      await client.query('DELETE FROM users WHERE id = $1', [uid]);
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
 
     req.session.userId = newUserId;
     await auditLog(newUserId, 'regen_seed', 'Seed phrase regenerated');
@@ -501,8 +562,20 @@ app.post('/api/settings/regen-seed', requireAuth, verifyCsrf, async (req, res) =
 
 app.post('/api/settings/delete-account', requireAuth, verifyCsrf, async (req, res) => {
   try {
-    await auditLog(req.session.userId, 'delete_account', 'Account deleted');
-    await pool.query('DELETE FROM users WHERE id = $1', [req.session.userId]);
+    const uid = req.session.userId;
+    await auditLog(uid, 'delete_account', 'Account deleted');
+    // Cascade delete all related data
+    await pool.query('DELETE FROM hidden_conversations WHERE user_id = $1', [uid]);
+    await pool.query('DELETE FROM read_receipts WHERE user_id = $1', [uid]);
+    await pool.query('DELETE FROM typing_status WHERE user_id = $1', [uid]);
+    await pool.query('DELETE FROM blocked_users WHERE blocker_id = $1 OR blocked_id = $1', [uid]);
+    await pool.query('DELETE FROM pinned_messages WHERE pinned_by = $1', [uid]);
+    await pool.query('DELETE FROM audit_log WHERE user_id = $1', [uid]);
+    // Delete messages sent by this user
+    await pool.query('DELETE FROM messages WHERE sender_id = $1', [uid]);
+    // Delete conversations where this user is a participant (messages cascade via FK)
+    await pool.query('DELETE FROM conversations WHERE user1_id = $1 OR user2_id = $1', [uid]);
+    await pool.query('DELETE FROM users WHERE id = $1', [uid]);
     req.session.destroy(() => ok(res));
   } catch (e) { fail(res, 'Internal error', 500); }
 });

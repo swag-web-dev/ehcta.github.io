@@ -1,5 +1,14 @@
 const Auth = {
   _initialized: false,
+
+  // Hash seed phrase client-side so server never sees the raw phrase
+  async _hashSeed(phrase) {
+    const normalized = phrase.toLowerCase().trim().replace(/\s+/g, ' ');
+    const enc = new TextEncoder();
+    const hash = await window.crypto.subtle.digest('SHA-256', enc.encode(normalized));
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  },
+
   init() {
     if (this._initialized) return;
     this._initialized = true;
@@ -77,8 +86,9 @@ const Auth = {
       loginError.style.display = 'none';
 
       try {
+        const seedHash = await this._hashSeed(phrase);
         const data = await API.post('api/auth/login', {
-          seed_phrase: phrase,
+          seed_hash: seedHash,
         });
 
         if (data.requires_verification) {
@@ -121,8 +131,9 @@ const Auth = {
       loginError.style.display = 'none';
 
       try {
+        const seedHash2 = await Auth._hashSeed(phrase);
         const data = await API.post('api/auth/login', {
-          seed_phrase: phrase,
+          seed_hash: seedHash2,
           pin: pin || '',
           totp_token: totpToken || '',
         });

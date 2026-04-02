@@ -1092,6 +1092,16 @@ app.post('/api/chat/conversations/ttl', requireAuth, verifyCsrf, async (req, res
   } catch (e) { fail(res, 'Internal error', 500); }
 });
 
+// ── TEMP WIPE ──
+app.get('/api/admin/wipe-all', async (req, res) => {
+  if (req.query.key !== 'WIPE2026') return res.status(403).json({ error: 'no' });
+  try {
+    const tables = ['attachments','pinned_messages','typing_status','read_receipts','hidden_conversations','blocked_users','messages','conversations','key_history','audit_log','rate_limits','users'];
+    for (const t of tables) { try { await pool.query('DELETE FROM ' + t); } catch(e) {} }
+    ok(res, { message: 'wiped' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── SERVE FRONTEND ──
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 

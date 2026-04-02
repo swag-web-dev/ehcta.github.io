@@ -756,14 +756,25 @@ textarea.input {
   height: 100%;
   overflow: hidden;
 }
+.app-view--settings {
+  overflow: visible !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.app-view--settings #settings-nav {
+  flex-shrink: 0;
+}
 #main-content {
   height: 100%;
   overflow: hidden;
+  overflow-x: hidden;
 }
 .main--settings {
-  margin-left: 220px !important;
-  padding: 48px !important;
+  margin-left: 220px;
+  padding: 48px;
   overflow-y: auto !important;
+  overflow-x: hidden !important;
+  flex: 1;
 }
 
 /* ── CHAT LAYOUT ── */
@@ -777,9 +788,10 @@ textarea.input {
   min-height: 0;
 }
 .chat-layout--fullpage {
-  height: 100vh;
+  height: 100%;
   border: none;
   border-right: var(--border);
+  overflow: hidden;
 }
 .chat-sidebar {
   border-right: var(--border);

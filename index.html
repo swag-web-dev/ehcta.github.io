@@ -60,7 +60,10 @@
           <div class="input-group">
             <label for="seed-input">Seed Phrase</label>
             <textarea id="seed-input" class="input" rows="3" placeholder="Enter your 24-word seed phrase..." style="-webkit-text-security:disc;-moz-text-security:disc;text-security:disc;"></textarea>
-            <button type="button" id="seed-show-btn" class="btn btn--small" style="margin-top:6px;align-self:flex-start;" onclick="(function(){var ta=document.getElementById('seed-input'),btn=document.getElementById('seed-show-btn');if(ta.style.webkitTextSecurity==='disc'||ta.style.textSecurity==='disc'){ta.style.webkitTextSecurity='none';ta.style.MozTextSecurity='none';ta.style.textSecurity='none';btn.textContent='HIDE';}else{ta.style.webkitTextSecurity='disc';ta.style.MozTextSecurity='disc';ta.style.textSecurity='disc';btn.textContent='SHOW';}})()">SHOW</button>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+              <button type="button" id="seed-paste-btn" class="btn btn--small" onclick="(async function(){try{var t=await navigator.clipboard.readText();if(t)document.getElementById('seed-input').value=t;}catch(e){document.getElementById('seed-input').focus();document.execCommand('paste');}})()">PASTE</button>
+              <button type="button" id="seed-show-btn" class="btn btn--small" onclick="(function(){var ta=document.getElementById('seed-input'),btn=document.getElementById('seed-show-btn');if(ta.style.webkitTextSecurity==='disc'||ta.style.textSecurity==='disc'){ta.style.webkitTextSecurity='none';ta.style.MozTextSecurity='none';ta.style.textSecurity='none';btn.textContent='HIDE';}else{ta.style.webkitTextSecurity='disc';ta.style.MozTextSecurity='disc';ta.style.textSecurity='disc';btn.textContent='SHOW';}})()">SHOW</button>
+            </div>
           </div>
           <div id="login-error" style="display:none;color:var(--color-text);border:var(--border);padding:8px 12px;margin-bottom:16px;font-size:0.8rem;"></div>
           <div id="login-step1" style="display:flex;gap:8px;">

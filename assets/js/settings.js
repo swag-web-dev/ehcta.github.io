@@ -499,6 +499,7 @@ const Settings = {
     }
     document.getElementById('regen-step1').style.display = 'block';
     document.getElementById('regen-step2').style.display = 'none';
+    document.getElementById('regen-cancel-btn').style.display = 'inline-flex';
     document.getElementById('regen-verify-btn').style.display = 'inline-flex';
     document.getElementById('regen-copy-btn').style.display = 'none';
     document.getElementById('regen-done-btn').style.display = 'none';
@@ -522,6 +523,7 @@ const Settings = {
         .join('');
       document.getElementById('regen-step1').style.display = 'none';
       document.getElementById('regen-step2').style.display = 'block';
+      document.getElementById('regen-cancel-btn').style.display = 'none';
       document.getElementById('regen-verify-btn').style.display = 'none';
       document.getElementById('regen-copy-btn').style.display = 'inline-flex';
       document.getElementById('regen-done-btn').style.display = 'inline-flex';

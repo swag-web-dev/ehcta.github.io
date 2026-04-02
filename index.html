@@ -489,7 +489,7 @@
 
   <!-- Regenerate Seed Modal -->
   <div class="modal-overlay modal-overlay--hidden" id="regen-seed-modal">
-    <div class="modal" style="max-width:500px;">
+    <div class="modal" style="max-width:420px;">
       <div class="modal__header">
         <h2 class="modal__title">Regenerate Seed Phrase</h2>
       </div>
@@ -505,17 +505,17 @@
           <p style="font-size:0.85rem;color:var(--color-text-muted);margin-bottom:8px;">
             Your new 24-word seed phrase. Write it down carefully.
           </p>
-          <div class="seed-grid" id="regen-seed-display"></div>
+          <div class="seed-grid" id="regen-seed-display" style="grid-template-columns:repeat(3,1fr);"></div>
           <p style="font-size:0.75rem;color:var(--color-text-muted);border-top:var(--border-muted);padding-top:12px;">
             Do not share this phrase. Anyone with these words has full access to your account.
           </p>
         </div>
       </div>
       <div class="modal__footer">
-        <button id="regen-cancel-btn" class="btn btn--small">CANCEL</button>
+        <button id="regen-cancel-btn" class="btn btn--small" style="display:none;">CANCEL</button>
         <button id="regen-verify-btn" class="btn btn--small btn--primary">VERIFY</button>
-        <button id="regen-copy-btn" class="btn btn--small" style="display:none;">COPY PHRASE</button>
-        <button id="regen-done-btn" class="btn btn--small btn--primary" style="display:none;">I HAVE SAVED MY PHRASE</button>
+        <button id="regen-copy-btn" class="btn btn--small" style="display:none;">COPY</button>
+        <button id="regen-done-btn" class="btn btn--small btn--primary" style="display:none;">I HAVE MY SEED CODE</button>
       </div>
     </div>
   </div>

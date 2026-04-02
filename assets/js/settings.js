@@ -205,11 +205,14 @@ const Settings = {
       document.getElementById('totp-status-on').style.display = hasTotp ? 'block' : 'none';
 
       this._hasTotp = hasTotp;
+      const regenBtn = document.getElementById('regen-seed-btn');
       const regenStatus = document.getElementById('regen-seed-status');
       if (hasTotp) {
+        regenBtn.disabled = false;
         regenStatus.textContent = '2FA enabled - regeneration available';
         regenStatus.style.color = 'var(--color-text-muted)';
       } else {
+        regenBtn.disabled = true;
         regenStatus.textContent = 'Requires 2FA to be enabled';
         regenStatus.style.color = 'var(--color-text-muted)';
       }

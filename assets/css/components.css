@@ -805,6 +805,10 @@ textarea.input {
     grid-template-columns: 1fr;
     height: calc(100vh - 60px);
   }
+  .chat-layout--fullpage {
+    height: 100vh;
+    height: 100dvh;
+  }
   .chat-sidebar {
     border-right: none;
   }
@@ -819,6 +823,10 @@ textarea.input {
   }
   #chat-header-back {
     display: inline !important;
+  }
+  /* Ensure input area is accessible above keyboard */
+  #chat-input-area {
+    padding-bottom: env(safe-area-inset-bottom, 12px);
   }
 }
 
@@ -923,4 +931,183 @@ textarea.input {
 }
 .emoji-picker__item:hover {
   background: var(--color-surface-hover, rgba(255,255,255,0.1));
+}
+
+/* ── MOBILE RESPONSIVE FIXES ── */
+@media (max-width: 600px) {
+  /* Settings nav as horizontal tabs on mobile */
+  #settings-nav {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    bottom: auto !important;
+    border-right: none !important;
+    border-bottom: var(--border) !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: var(--spacing-sm) !important;
+    flex-wrap: wrap;
+  }
+  #settings-nav .nav__logo {
+    display: none;
+  }
+  #settings-nav .nav__tabs {
+    flex-direction: row !important;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    display: flex !important;
+    width: 100%;
+  }
+  #settings-nav .nav__tab {
+    white-space: nowrap;
+    border: none !important;
+    border-bottom: none !important;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-xs);
+    flex-shrink: 0;
+  }
+
+  /* Settings content full width on mobile */
+  #main-content {
+    margin-left: 0 !important;
+    padding: var(--spacing-md) !important;
+  }
+
+  /* Profile grids stack to 1 column */
+  .profile-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Cards no horizontal overflow */
+  .card {
+    overflow-x: hidden;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .card[style*="padding:32px"] {
+    padding: var(--spacing-md) !important;
+  }
+
+  /* Modals fit on screen */
+  .modal {
+    max-width: calc(100vw - 32px) !important;
+    max-height: calc(100vh - 32px) !important;
+    margin: 16px;
+  }
+  .modal__footer {
+    flex-wrap: wrap;
+  }
+  .modal__footer .btn {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Seed grid 2 columns on mobile */
+  .seed-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Chat layout full height on mobile */
+  .chat-layout {
+    height: 100vh !important;
+    height: 100dvh !important;
+  }
+  .chat-layout--fullpage {
+    height: 100vh !important;
+    height: 100dvh !important;
+    border: none !important;
+  }
+
+  /* Settings rows stack on narrow screens */
+  .settings-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+
+  /* Timezone input full width */
+  #settings-timezone {
+    width: 100% !important;
+  }
+
+  /* Form elements full width */
+  select.input,
+  input.input {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Strength selector wraps */
+  .strength-select {
+    flex-wrap: wrap;
+  }
+
+  /* Toast narrower on mobile */
+  .toast {
+    max-width: calc(100vw - 48px);
+  }
+  .toast-container {
+    right: var(--spacing-md);
+    left: var(--spacing-md);
+  }
+
+  /* Emoji picker fits on mobile */
+  .emoji-picker {
+    width: calc(100vw - 32px) !important;
+    max-width: 280px;
+  }
+  #chat-emoji-picker {
+    left: 8px !important;
+    right: 8px;
+  }
+}
+
+/* Seed grid 2 columns at narrower breakpoint too */
+@media (max-width: 500px) {
+  .seed-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .seed-word {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-size-xs);
+  }
+}
+
+/* Override the JS-set margin-left on settings for mobile */
+@media (max-width: 900px) {
+  #main-content {
+    margin-left: 0 !important;
+  }
+  #settings-nav {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    bottom: auto !important;
+    border-right: none !important;
+    border-bottom: var(--border) !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: var(--spacing-sm) !important;
+    flex-wrap: wrap;
+  }
+  #settings-nav .nav__logo {
+    display: none;
+  }
+  #settings-nav .nav__tabs {
+    flex-direction: row !important;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    display: flex !important;
+    width: 100%;
+  }
+  #settings-nav .nav__tab {
+    white-space: nowrap;
+    border: none !important;
+    border-bottom: none !important;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-xs);
+    flex-shrink: 0;
+  }
 }

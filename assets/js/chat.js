@@ -398,7 +398,9 @@ const Chat = {
     const searchInput = document.getElementById('chat-search');
     if (searchInput) searchInput.value = '';
     try {
+      console.log('[DEBUG] startConversation called with:', uniqueId);
       const data = await API.post('api/chat/conversations/start', { unique_id: uniqueId });
+      console.log('[DEBUG] startConversation response:', JSON.stringify(data));
       this._activeConvId = data.conversation_id;
       this._activeConvMeta = {
         id: data.conversation_id, otherPublicKey: data.other_public_key,

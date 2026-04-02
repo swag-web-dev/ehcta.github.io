@@ -725,13 +725,8 @@ const Chat = {
         this._checkForChanges(this._activeConvId);
         this._checkTyping();
       }
-      // Only refresh conversation list every 10s (every 2nd tick at 5s interval)
-      this._convPollCount++;
-      if (this._convPollCount >= 2) {
-        this._convPollCount = 0;
-        this._checkConversations();
-      }
-    }, 5000);
+      this._checkConversations();
+    }, 2000);
   },
 
   async _checkConversations() {

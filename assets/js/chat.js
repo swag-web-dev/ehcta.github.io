@@ -188,6 +188,16 @@
       cursor: pointer; z-index: 10000; line-height: 1;
     }
     .chat-lightbox__close:hover { color: #e74c3c; }
+    .chat-profile-tab {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      color: var(--color-text-muted, #888); font-size: 0.75rem; font-family: var(--font-body, sans-serif);
+      text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 16px;
+      cursor: pointer; white-space: nowrap;
+    }
+    .chat-profile-tab:hover { color: var(--color-text, #fff); }
+    .chat-profile-tab--active {
+      color: var(--color-text, #fff); border-bottom-color: var(--color-accent, #fff);
+    }
   `;
   document.head.appendChild(style);
 })();
@@ -1325,84 +1335,48 @@ const Chat = {
     const conv = this._conversations.find(c => c.id === this._activeConvId);
     if (!conv) return;
     this._profileOpen = true;
+    this._profileTab = null;
 
     const currentTtl = conv.default_ttl || 0;
     const ttlOn = currentTtl > 0;
-
-    // Count files, images, links, phone numbers from messages
-    const msgs = this._messages[this._activeConvId] || [];
-    let fileCount = 0, imageCount = 0, linkCount = 0, phoneCount = 0;
-    const phoneRegex = /(\+?\d[\d\s\-()]{6,}\d)/g;
-    const urlRegex = /(https?:\/\/[^\s<]+)/gi;
-
-    for (const m of msgs) {
-      const text = m._plaintext || '';
-      const links = text.match(urlRegex);
-      if (links) linkCount += links.length;
-      const phones = text.match(phoneRegex);
-      if (phones) phoneCount += phones.length;
-      const att = m._decryptedAttachment || m.attachment || '';
-      if (att.length > 2) {
-        try {
-          const files = JSON.parse(att);
-          for (const f of files) {
-            if (f.type && f.type.startsWith('image/')) imageCount++;
-            else fileCount++;
-          }
-        } catch(e) {}
-      }
-    }
+    const statusClass = this._getOnlineStatus(conv.other_last_seen);
+    const statusText = this._getLastSeenText(conv.other_last_seen);
 
     const overlay = document.createElement('div');
     overlay.id = 'chat-profile-overlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
 
     const popup = document.createElement('div');
-    popup.style.cssText = 'background:var(--color-bg,#000);border:var(--border,1px solid #fff);width:320px;max-height:80vh;overflow-y:auto;';
+    popup.style.cssText = 'background:var(--color-bg,#000);border:var(--border,1px solid #fff);width:480px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;';
 
-    // Header
     popup.innerHTML = `
-      <div style="padding:16px;border-bottom:var(--border-muted);display:flex;justify-content:space-between;align-items:center;">
+      <div style="padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;">
         <div>
-          <div style="font-size:1.1rem;font-weight:500;font-family:var(--font-title);">${this._esc(conv.other_user_name || 'Unknown')}</div>
-          <div style="font-size:0.75rem;color:var(--color-text-muted);">@${this._esc(conv.other_user_uid || '')}</div>
+          <div style="font-size:1.3rem;font-weight:500;font-family:var(--font-title);">${this._esc(conv.other_user_name || 'Unknown')}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+            <span class="chat-conv-item__status ${statusClass}"></span>
+            <span style="font-size:0.75rem;color:var(--color-text-muted);">${this._esc(statusText)}</span>
+          </div>
         </div>
-        <button onclick="Chat.closeUserProfile()" style="background:none;border:none;color:var(--color-text-muted);cursor:pointer;font-size:1.2rem;">&times;</button>
+        <button onclick="Chat.closeUserProfile()" style="background:none;border:none;color:var(--color-text-muted);cursor:pointer;font-size:1.4rem;line-height:1;">&times;</button>
       </div>
-      <div style="padding:16px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
-          <div onclick="Chat._showSharedContent('files')" style="cursor:pointer;padding:12px;border:var(--border-muted);text-align:center;">
-            <div style="font-size:1.5rem;margin-bottom:4px;">&#128196;</div>
-            <div style="font-size:0.75rem;color:var(--color-text-muted);">Files</div>
-            <div style="font-size:1.1rem;font-weight:500;">${fileCount}</div>
-          </div>
-          <div onclick="Chat._showSharedContent('images')" style="cursor:pointer;padding:12px;border:var(--border-muted);text-align:center;">
-            <div style="font-size:1.5rem;margin-bottom:4px;">&#128247;</div>
-            <div style="font-size:0.75rem;color:var(--color-text-muted);">Pictures</div>
-            <div style="font-size:1.1rem;font-weight:500;">${imageCount}</div>
-          </div>
-          <div onclick="Chat._showSharedContent('links')" style="cursor:pointer;padding:12px;border:var(--border-muted);text-align:center;">
-            <div style="font-size:1.5rem;margin-bottom:4px;">&#128279;</div>
-            <div style="font-size:0.75rem;color:var(--color-text-muted);">Links</div>
-            <div style="font-size:1.1rem;font-weight:500;">${linkCount}</div>
-          </div>
-          <div onclick="Chat._showSharedContent('phones')" style="cursor:pointer;padding:12px;border:var(--border-muted);text-align:center;">
-            <div style="font-size:1.5rem;margin-bottom:4px;">&#128222;</div>
-            <div style="font-size:0.75rem;color:var(--color-text-muted);">Phone Numbers</div>
-            <div style="font-size:1.1rem;font-weight:500;">${phoneCount}</div>
-          </div>
+      <div style="border-top:var(--border-muted);display:flex;overflow-x:auto;flex-shrink:0;" id="chat-profile-tabs">
+        <button class="chat-profile-tab" onclick="Chat._switchProfileTab('photos')">Photos</button>
+        <button class="chat-profile-tab" onclick="Chat._switchProfileTab('links')">Links</button>
+        <button class="chat-profile-tab" onclick="Chat._switchProfileTab('numbers')">Numbers</button>
+        <button class="chat-profile-tab" onclick="Chat._switchProfileTab('files')">Files</button>
+        <button class="chat-profile-tab" onclick="Chat._switchProfileTab('search')" style="margin-left:auto;font-size:0.9rem;" title="Search messages">&#128269;</button>
+      </div>
+      <div id="chat-profile-content" style="flex:1;overflow-y:auto;padding:16px 24px;min-height:200px;scrollbar-width:thin;scrollbar-color:var(--color-text-muted) var(--color-surface);"></div>
+      <div style="border-top:var(--border-muted);padding:12px 24px;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:0.8rem;font-weight:500;">Disappearing Messages</div>
+          <div style="font-size:0.65rem;color:var(--color-text-muted);margin-top:1px;">Auto-delete after 24h</div>
         </div>
-        <div style="border-top:var(--border-muted);padding-top:12px;display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-size:0.85rem;font-weight:500;">Disappearing Messages</div>
-            <div style="font-size:0.7rem;color:var(--color-text-muted);margin-top:2px;">Messages delete after 24 hours</div>
-          </div>
-          <div class="toggle ${ttlOn ? 'toggle--active' : ''}" onclick="Chat.toggleDisappearing()" style="cursor:pointer;">
-            <div class="toggle__knob"></div>
-          </div>
+        <div class="toggle ${ttlOn ? 'toggle--active' : ''}" onclick="Chat.toggleDisappearing()" style="cursor:pointer;">
+          <div class="toggle__knob"></div>
         </div>
       </div>
-      <div id="chat-profile-content" style="display:none;padding:0 16px 16px;"></div>
     `;
 
     overlay.appendChild(popup);
@@ -1410,12 +1384,87 @@ const Chat = {
       if (e.target === overlay) this.closeUserProfile();
     });
     document.body.appendChild(overlay);
+
+    // Default to photos tab
+    this._switchProfileTab('photos');
   },
 
   closeUserProfile() {
     this._profileOpen = false;
+    this._profileTab = null;
     const overlay = document.getElementById('chat-profile-overlay');
     if (overlay) overlay.remove();
+  },
+
+  _switchProfileTab(tab) {
+    this._profileTab = tab;
+    // Update tab active states
+    const tabs = document.querySelectorAll('.chat-profile-tab');
+    tabs.forEach(t => t.classList.remove('chat-profile-tab--active'));
+    const tabNames = ['photos', 'links', 'numbers', 'files', 'search'];
+    const idx = tabNames.indexOf(tab);
+    if (idx >= 0 && tabs[idx]) tabs[idx].classList.add('chat-profile-tab--active');
+
+    if (tab === 'search') {
+      this._showProfileSearch();
+    } else {
+      this._showSharedContent(tab);
+    }
+  },
+
+  _showProfileSearch() {
+    const container = document.getElementById('chat-profile-content');
+    if (!container) return;
+    container.innerHTML = `
+      <div style="margin-bottom:12px;">
+        <input type="text" id="chat-profile-search-input" class="input" placeholder="Search messages..." autocomplete="off" style="width:100%;font-size:0.85rem;">
+      </div>
+      <div id="chat-profile-search-results" style="font-size:0.85rem;"></div>
+    `;
+    const input = document.getElementById('chat-profile-search-input');
+    input.focus();
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      this._runProfileSearch(q);
+    });
+  },
+
+  _runProfileSearch(query) {
+    const resultsEl = document.getElementById('chat-profile-search-results');
+    if (!resultsEl) return;
+    if (!query) { resultsEl.innerHTML = '<div style="text-align:center;color:var(--color-text-muted);padding:24px 0;">Type to search messages</div>'; return; }
+    const msgs = this._messages[this._activeConvId] || [];
+    const matches = msgs.filter(m => (m._plaintext || '').toLowerCase().includes(query));
+    if (matches.length === 0) {
+      resultsEl.innerHTML = '<div style="text-align:center;color:var(--color-text-muted);padding:24px 0;">No messages found</div>';
+      return;
+    }
+    let html = `<div style="font-size:0.7rem;color:var(--color-text-muted);margin-bottom:8px;">${matches.length} result${matches.length !== 1 ? 's' : ''}</div>`;
+    for (const m of matches) {
+      const text = m._plaintext || '';
+      const isMine = m._isMine || (this._myUserId && m.sender_id === this._myUserId);
+      const time = this._formatTime(m.created_at);
+      // Highlight matching text
+      const escaped = this._esc(text);
+      const escapedQuery = this._esc(query);
+      const highlighted = escaped.replace(new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'), '<mark style="background:var(--color-accent);color:var(--color-bg);padding:0 2px;">$1</mark>');
+      html += `<div style="padding:10px 0;border-bottom:var(--border-muted);cursor:pointer;" onclick="Chat.closeUserProfile();Chat._scrollToMsg('${this._esc(m.id)}')">
+        <div style="font-size:0.65rem;color:var(--color-text-muted);margin-bottom:3px;">${isMine ? 'You' : this._esc(this._conversations.find(c => c.id === this._activeConvId)?.other_user_name || 'Them')} &middot; ${time}</div>
+        <div style="line-height:1.4;">${highlighted}</div>
+      </div>`;
+    }
+    resultsEl.innerHTML = html;
+  },
+
+  _scrollToMsg(msgId) {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    const el = container.querySelector('[data-msg-id="' + msgId + '"]');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.background = 'rgba(255,255,255,0.1)';
+      setTimeout(() => el.style.background = '', 1500);
+    }
   },
 
   _showSharedContent(type) {
@@ -1426,18 +1475,32 @@ const Chat = {
     const urlRegex = /(https?:\/\/[^\s<]+)/gi;
     const phoneRegex = /(\+?\d[\d\s\-()]{6,}\d)/g;
 
-    if (type === 'files' || type === 'images') {
+    if (type === 'photos') {
+      let items = '';
       for (const m of msgs) {
         const att = m._decryptedAttachment || m.attachment || '';
         if (att.length <= 2) continue;
         try {
           const files = JSON.parse(att);
           for (const f of files) {
-            const isImage = f.type && f.type.startsWith('image/');
-            if (type === 'images' && isImage) {
-              html += `<div style="margin-bottom:8px;"><img src="${this._esc(f.data)}" style="max-width:100%;max-height:120px;cursor:pointer;border:var(--border-muted);" onclick="Chat._openLightbox(this.src)"><div style="font-size:0.65rem;color:var(--color-text-muted);margin-top:2px;">${this._esc(f.name)}</div></div>`;
-            } else if (type === 'files' && !isImage) {
-              html += `<div style="padding:6px 0;border-bottom:var(--border-muted);font-size:0.8rem;"><a href="${this._esc(f.data)}" download="${this._esc(f.name)}" style="color:var(--color-text);text-decoration:none;">${this._esc(f.name)} <span style="color:var(--color-text-muted);">(${this._formatSize(f.size)})</span></a></div>`;
+            if (f.type && f.type.startsWith('image/')) {
+              items += `<div style="aspect-ratio:1;overflow:hidden;border:var(--border-muted);cursor:pointer;" onclick="Chat._openLightbox('${this._esc(f.data)}')"><img src="${this._esc(f.data)}" style="width:100%;height:100%;object-fit:cover;" alt="${this._esc(f.name)}"></div>`;
+            }
+          }
+        } catch(e) {}
+      }
+      if (items) {
+        html = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">${items}</div>`;
+      }
+    } else if (type === 'files') {
+      for (const m of msgs) {
+        const att = m._decryptedAttachment || m.attachment || '';
+        if (att.length <= 2) continue;
+        try {
+          const files = JSON.parse(att);
+          for (const f of files) {
+            if (!f.type || !f.type.startsWith('image/')) {
+              html += `<div style="padding:10px 0;border-bottom:var(--border-muted);display:flex;justify-content:space-between;align-items:center;"><div style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${this._esc(f.name)}</div><a href="${this._esc(f.data)}" download="${this._esc(f.name)}" style="color:var(--color-text-muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;text-decoration:none;flex-shrink:0;margin-left:12px;">${this._formatSize(f.size)}</a></div>`;
             }
           }
         } catch(e) {}
@@ -1451,11 +1514,11 @@ const Chat = {
           for (const link of links) {
             if (seen.has(link)) continue;
             seen.add(link);
-            html += `<div style="padding:6px 0;border-bottom:var(--border-muted);font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="${this._esc(link)}" target="_blank" rel="noopener" style="color:var(--color-text);">${this._esc(link)}</a></div>`;
+            html += `<div style="padding:10px 0;border-bottom:var(--border-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="${this._esc(link)}" target="_blank" rel="noopener" style="color:var(--color-text);font-size:0.85rem;">${this._esc(link)}</a></div>`;
           }
         }
       }
-    } else if (type === 'phones') {
+    } else if (type === 'numbers') {
       const seen = new Set();
       for (const m of msgs) {
         const text = m._plaintext || '';
@@ -1465,14 +1528,13 @@ const Chat = {
             const clean = phone.trim();
             if (seen.has(clean)) continue;
             seen.add(clean);
-            html += `<div style="padding:8px 0;border-bottom:var(--border-muted);font-size:0.9rem;">${this._esc(clean)}</div>`;
+            html += `<div style="padding:10px 0;border-bottom:var(--border-muted);font-size:0.9rem;">${this._esc(clean)}</div>`;
           }
         }
       }
     }
 
-    container.innerHTML = html || '<div style="padding:12px 0;text-align:center;font-size:0.8rem;color:var(--color-text-muted);">None found</div>';
-    container.style.display = 'block';
+    container.innerHTML = html || '<div style="padding:40px 0;text-align:center;font-size:0.85rem;color:var(--color-text-muted);">None found</div>';
   },
 
   // ── DISAPPEARING MESSAGES ──

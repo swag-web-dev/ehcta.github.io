@@ -148,10 +148,13 @@
               <div id="chat-search-results" style="display:none;"></div>
             </div>
             <div id="chat-conv-list" style="flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--color-text-muted) var(--color-surface);"></div>
-            <div style="padding:12px 16px;border-top:var(--border-muted);display:flex;gap:6px;align-items:center;">
-              <span id="nav-display-name" style="font-size:0.7rem;color:var(--color-text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Anonymous</span>
-              <button id="settings-nav-btn" class="btn btn--small" title="Settings" style="font-size:1rem;padding:4px 8px;">&#9881;</button>
-              <button id="logout-btn" class="btn btn--small" style="padding:4px 8px;font-size:0.65rem;">LOGOUT</button>
+            <div style="padding:12px 16px;border-top:var(--border-muted);">
+              <div id="nav-display-name" style="font-size:0.8rem;font-weight:500;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Anonymous</div>
+              <div style="display:flex;gap:4px;">
+                <button id="logout-btn" class="btn btn--small" style="flex:1;padding:6px 8px;font-size:0.65rem;">LOGOUT</button>
+                <button id="settings-nav-btn" class="btn btn--small" title="Settings" style="font-size:0.9rem;padding:6px 8px;">&#9881;</button>
+                <button id="settings-nav-btn2" class="btn btn--small" onclick="App.enterSettings()" style="flex:1;padding:6px 8px;font-size:0.65rem;">SETTINGS</button>
+              </div>
             </div>
           </div>
           <!-- Right: Messages -->

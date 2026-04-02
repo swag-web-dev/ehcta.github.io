@@ -190,8 +190,8 @@
     .chat-lightbox__close:hover { color: #e74c3c; }
     .chat-profile-tab {
       background: none; border: none; border-bottom: 2px solid transparent;
-      color: var(--color-text-muted, #888); font-size: 0.75rem; font-family: var(--font-body, sans-serif);
-      text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 16px;
+      color: var(--color-text-muted, #888); font-size: 0.85rem; font-family: var(--font-body, sans-serif);
+      text-transform: uppercase; letter-spacing: 0.06em; padding: 14px 20px;
       cursor: pointer; white-space: nowrap;
     }
     .chat-profile-tab:hover { color: var(--color-text, #fff); }
@@ -1353,7 +1353,8 @@ const Chat = {
       <div style="padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;">
         <div>
           <div style="font-size:1.3rem;font-weight:500;font-family:var(--font-title);">${this._esc(conv.other_user_name || 'Unknown')}</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <div style="font-size:0.8rem;color:var(--color-text-muted);margin-top:2px;">@${this._esc(conv.other_user_uid || '')}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
             <span class="chat-conv-item__status ${statusClass}"></span>
             <span style="font-size:0.75rem;color:var(--color-text-muted);">${this._esc(statusText)}</span>
           </div>
@@ -1365,10 +1366,10 @@ const Chat = {
         <button class="chat-profile-tab" onclick="Chat._switchProfileTab('links')">Links</button>
         <button class="chat-profile-tab" onclick="Chat._switchProfileTab('numbers')">Numbers</button>
         <button class="chat-profile-tab" onclick="Chat._switchProfileTab('files')">Files</button>
-        <button class="chat-profile-tab" onclick="Chat._switchProfileTab('search')" style="margin-left:auto;font-size:0.9rem;" title="Search messages">&#128269;</button>
+        <button class="chat-profile-tab" onclick="Chat._switchProfileTab('search')" style="margin-left:auto;" title="Search messages">&#128269;</button>
       </div>
       <div id="chat-profile-content" style="flex:1;overflow-y:auto;padding:16px 24px;min-height:200px;scrollbar-width:thin;scrollbar-color:var(--color-text-muted) var(--color-surface);"></div>
-      <div style="border-top:var(--border-muted);padding:12px 24px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="border-top:var(--border-muted);padding:12px 24px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
         <div>
           <div style="font-size:0.8rem;font-weight:500;">Disappearing Messages</div>
           <div style="font-size:0.65rem;color:var(--color-text-muted);margin-top:1px;">Auto-delete after 24h</div>
@@ -1467,6 +1468,13 @@ const Chat = {
     }
   },
 
+  _msgSender(m) {
+    const isMine = m._isMine || (this._myUserId && m.sender_id === this._myUserId);
+    if (isMine) return 'You';
+    const conv = this._conversations.find(c => c.id === this._activeConvId);
+    return conv ? (conv.other_user_name || 'Unknown') : 'Them';
+  },
+
   _showSharedContent(type) {
     const container = document.getElementById('chat-profile-content');
     if (!container) return;
@@ -1474,6 +1482,7 @@ const Chat = {
     let html = '';
     const urlRegex = /(https?:\/\/[^\s<]+)/gi;
     const phoneRegex = /(\+?\d[\d\s\-()]{6,}\d)/g;
+    const senderMeta = (m) => `<div style="font-size:0.65rem;color:var(--color-text-muted);margin-bottom:3px;">${this._esc(this._msgSender(m))} &middot; ${this._formatTimeShort(m.created_at)}</div>`;
 
     if (type === 'photos') {
       let items = '';
@@ -1484,7 +1493,8 @@ const Chat = {
           const files = JSON.parse(att);
           for (const f of files) {
             if (f.type && f.type.startsWith('image/')) {
-              items += `<div style="aspect-ratio:1;overflow:hidden;border:var(--border-muted);cursor:pointer;" onclick="Chat._openLightbox('${this._esc(f.data)}')"><img src="${this._esc(f.data)}" style="width:100%;height:100%;object-fit:cover;" alt="${this._esc(f.name)}"></div>`;
+              const sender = this._esc(this._msgSender(m));
+              items += `<div style="overflow:hidden;border:var(--border-muted);cursor:pointer;" onclick="Chat._openLightbox(this.querySelector('img').src)"><img src="${this._esc(f.data)}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block;" alt="${this._esc(f.name)}"><div style="padding:4px 6px;font-size:0.6rem;color:var(--color-text-muted);background:var(--color-surface,#0a0a0a);">${sender}</div></div>`;
             }
           }
         } catch(e) {}
@@ -1500,7 +1510,7 @@ const Chat = {
           const files = JSON.parse(att);
           for (const f of files) {
             if (!f.type || !f.type.startsWith('image/')) {
-              html += `<div style="padding:10px 0;border-bottom:var(--border-muted);display:flex;justify-content:space-between;align-items:center;"><div style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${this._esc(f.name)}</div><a href="${this._esc(f.data)}" download="${this._esc(f.name)}" style="color:var(--color-text-muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;text-decoration:none;flex-shrink:0;margin-left:12px;">${this._formatSize(f.size)}</a></div>`;
+              html += `<div style="padding:10px 0;border-bottom:var(--border-muted);">${senderMeta(m)}<div style="display:flex;justify-content:space-between;align-items:center;"><div style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${this._esc(f.name)}</div><a href="${this._esc(f.data)}" download="${this._esc(f.name)}" style="color:var(--color-text-muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;text-decoration:none;flex-shrink:0;margin-left:12px;">${this._formatSize(f.size)}</a></div></div>`;
             }
           }
         } catch(e) {}
@@ -1514,7 +1524,7 @@ const Chat = {
           for (const link of links) {
             if (seen.has(link)) continue;
             seen.add(link);
-            html += `<div style="padding:10px 0;border-bottom:var(--border-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="${this._esc(link)}" target="_blank" rel="noopener" style="color:var(--color-text);font-size:0.85rem;">${this._esc(link)}</a></div>`;
+            html += `<div style="padding:10px 0;border-bottom:var(--border-muted);">${senderMeta(m)}<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="${this._esc(link)}" target="_blank" rel="noopener" style="color:var(--color-text);font-size:0.85rem;">${this._esc(link)}</a></div></div>`;
           }
         }
       }
@@ -1528,7 +1538,7 @@ const Chat = {
             const clean = phone.trim();
             if (seen.has(clean)) continue;
             seen.add(clean);
-            html += `<div style="padding:10px 0;border-bottom:var(--border-muted);font-size:0.9rem;">${this._esc(clean)}</div>`;
+            html += `<div style="padding:10px 0;border-bottom:var(--border-muted);">${senderMeta(m)}<div style="font-size:0.9rem;">${this._esc(clean)}</div></div>`;
           }
         }
       }

@@ -162,8 +162,7 @@ const Call = {
   _muted: false,
   _timer: null,
   _seconds: 0,
-  _ringtoneCtx: null,
-  _ringtoneOsc: null,
+  _ringtoneAudio: null,
 
   // ICE servers for NAT traversal
   _iceServers: [
@@ -516,47 +515,24 @@ const Call = {
     return m.toString().padStart(2, '0') + ':' + sec.toString().padStart(2, '0');
   },
 
-  // ── RINGTONE (Web Audio API) ──
+  // ── RINGTONE ──
   _startRingtone(type) {
     this._stopRingtone();
     try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      this._ringtoneCtx = new Ctx();
-      // iOS requires resume after creation
-      if (this._ringtoneCtx.state === 'suspended') {
-        this._ringtoneCtx.resume().catch(() => {});
-      }
-      const osc = this._ringtoneCtx.createOscillator();
-      const gain = this._ringtoneCtx.createGain();
-      osc.connect(gain);
-      gain.connect(this._ringtoneCtx.destination);
-      gain.gain.value = 0.08;
-
-      if (type === 'incoming') {
-        osc.frequency.value = 440;
-        const now = this._ringtoneCtx.currentTime;
-        for (let i = 0; i < 30; i++) {
-          gain.gain.setValueAtTime(0.08, now + i * 1.5);
-          gain.gain.setValueAtTime(0, now + i * 1.5 + 0.8);
-        }
-      } else {
-        osc.frequency.value = 350;
-        const now = this._ringtoneCtx.currentTime;
-        for (let i = 0; i < 30; i++) {
-          gain.gain.setValueAtTime(0.05, now + i * 3);
-          gain.gain.setValueAtTime(0, now + i * 3 + 1);
-        }
-      }
-      osc.start();
-      this._ringtoneOsc = osc;
+      this._ringtoneAudio = new Audio('assets/ringtone.m4a');
+      this._ringtoneAudio.loop = true;
+      this._ringtoneAudio.volume = type === 'incoming' ? 0.8 : 0.3;
+      this._ringtoneAudio.play().catch(() => {});
     } catch(e) {}
   },
 
   _stopRingtone() {
     try {
-      if (this._ringtoneOsc) { this._ringtoneOsc.stop(); this._ringtoneOsc = null; }
-      if (this._ringtoneCtx) { this._ringtoneCtx.close(); this._ringtoneCtx = null; }
+      if (this._ringtoneAudio) {
+        this._ringtoneAudio.pause();
+        this._ringtoneAudio.currentTime = 0;
+        this._ringtoneAudio = null;
+      }
     } catch(e) {}
   },
 

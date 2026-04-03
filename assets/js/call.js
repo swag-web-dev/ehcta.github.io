@@ -8,6 +8,7 @@
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       z-index: 500; background: rgba(0,0,0,0.85);
       display: flex; align-items: center; justify-content: center;
+      padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
     }
     .call-incoming__card {
       background: var(--color-bg, #000); border: var(--border, 1px solid #fff);
@@ -38,6 +39,7 @@
     .call-incoming__btn {
       padding: 12px 28px; font-size: 0.85rem; font-family: var(--font-body, sans-serif);
       text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; border: none;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
     }
     .call-incoming__btn--accept {
       background: #4aff7a; color: #000;
@@ -55,6 +57,7 @@
       padding: 12px 16px; min-width: 280px; max-width: 360px;
       cursor: move; user-select: none;
       box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     }
     .call-bar__header {
       display: flex; justify-content: space-between; align-items: center;
@@ -99,6 +102,7 @@
       text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer;
       border: var(--border-muted, 1px solid #333); background: transparent;
       color: var(--color-text, #fff); text-align: center;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
     }
     .call-bar__btn:hover { background: rgba(255,255,255,0.05); }
     .call-bar__btn--mute-active {
@@ -113,11 +117,38 @@
     .chat-call-btn {
       background: none; border: none; color: var(--color-text-muted, #888);
       cursor: pointer; font-size: 1.1rem; padding: 2px 4px; line-height: 1;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
     }
     .chat-call-btn:hover { color: var(--color-text, #fff); }
     .chat-call-btn:disabled { opacity: 0.3; cursor: default; }
+
+    /* ── MOBILE RESPONSIVE ── */
+    @media (max-width: 600px) {
+      .call-bar {
+        left: 8px; right: 8px; bottom: 8px;
+        min-width: auto; max-width: none;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      }
+      .call-incoming__card {
+        padding: 24px 20px;
+      }
+      .call-incoming__btn {
+        padding: 14px 20px; font-size: 0.9rem;
+      }
+    }
   `;
   document.head.appendChild(style);
+
+  // iOS Safari: create a persistent hidden <audio> element for remote audio playback.
+  // iOS blocks Audio() objects created outside of user gestures, but a pre-existing
+  // <audio> element that gets its srcObject set during a user-initiated flow works.
+  const audioEl = document.createElement('audio');
+  audioEl.id = 'call-remote-audio';
+  audioEl.setAttribute('playsinline', '');
+  audioEl.setAttribute('autoplay', '');
+  // WebKit needs the element in the DOM
+  audioEl.style.display = 'none';
+  document.body.appendChild(audioEl);
 })();
 
 const Call = {
@@ -131,7 +162,6 @@ const Call = {
   _muted: false,
   _timer: null,
   _seconds: 0,
-  _dragOffset: null,
   _ringtoneCtx: null,
   _ringtoneOsc: null,
 
@@ -158,6 +188,9 @@ const Call = {
     this._otherUid = conv.other_user_uid || '';
     this._state = 'calling';
 
+    // Prime the audio element with a user gesture (required on iOS)
+    this._primeAudio();
+
     try {
       this._localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (e) {
@@ -171,6 +204,15 @@ const Call = {
     this._sendSignal('call_request', { name: myName });
     this._showCallBar('Calling...');
     this._startRingtone('outgoing');
+  },
+
+  // Prime the persistent audio element so iOS allows playback later
+  _primeAudio() {
+    const el = document.getElementById('call-remote-audio');
+    if (el) {
+      // Play silence to unlock the element on iOS
+      el.play().catch(() => {});
+    }
   },
 
   // ── HANDLE INCOMING SIGNALS ──
@@ -209,9 +251,10 @@ const Call = {
   _onIncomingCall(convId, fromUserId, data) {
     if (this._state !== 'idle') {
       // Already in a call, auto-decline
+      const origConv = this._convId;
       this._convId = convId;
       this._sendSignal('call_decline');
-      this._convId = null;
+      this._convId = origConv;
       return;
     }
 
@@ -253,6 +296,9 @@ const Call = {
   async accept() {
     this._removeIncomingUI();
     this._stopRingtone();
+
+    // Prime audio on user gesture (iOS requirement — must happen in click handler)
+    this._primeAudio();
 
     try {
       this._localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -351,16 +397,23 @@ const Call = {
       }
     }
 
-    // Handle remote audio
+    // Handle remote audio — use the persistent <audio> element for iOS compatibility
     this._pc.ontrack = (e) => {
-      if (!this._remoteAudio) {
+      const audioEl = document.getElementById('call-remote-audio');
+      if (audioEl) {
+        audioEl.srcObject = e.streams[0];
+        // iOS needs explicit play() call
+        audioEl.play().catch(() => {});
+        this._remoteAudio = audioEl;
+      } else {
+        // Fallback: create Audio object (works on desktop/Android)
         this._remoteAudio = new Audio();
         this._remoteAudio.autoplay = true;
+        this._remoteAudio.srcObject = e.streams[0];
       }
-      this._remoteAudio.srcObject = e.streams[0];
       // Apply current volume
       const slider = document.getElementById('call-volume-slider');
-      if (slider) this._remoteAudio.volume = slider.value / 100;
+      if (slider && this._remoteAudio) this._remoteAudio.volume = slider.value / 100;
 
       this._updateCallBarStatus('Connected');
       this._startTimer();
@@ -373,10 +426,25 @@ const Call = {
       }
     };
 
-    this._pc.onconnectionstatechange = () => {
-      if (this._pc && (this._pc.connectionState === 'failed' || this._pc.connectionState === 'disconnected')) {
-        Toast.show('Call connection lost', true);
+    // Monitor connection state
+    this._pc.oniceconnectionstatechange = () => {
+      if (!this._pc) return;
+      const state = this._pc.iceConnectionState;
+      if (state === 'failed') {
+        Toast.show('Call connection failed', true);
         this.end();
+      } else if (state === 'disconnected') {
+        this._updateCallBarStatus('Reconnecting...');
+        // Give it a few seconds to recover before ending
+        this._disconnectTimer = setTimeout(() => {
+          if (this._pc && this._pc.iceConnectionState === 'disconnected') {
+            Toast.show('Call connection lost', true);
+            this.end();
+          }
+        }, 5000);
+      } else if (state === 'connected' || state === 'completed') {
+        clearTimeout(this._disconnectTimer);
+        this._updateCallBarStatus('Connected');
       }
     };
   },
@@ -392,15 +460,16 @@ const Call = {
     this._removeIncomingUI();
     this._removeCallBar();
     this._stopTimer();
+    clearTimeout(this._disconnectTimer);
     if (this._pc) { this._pc.close(); this._pc = null; }
     if (this._localStream) {
       this._localStream.getTracks().forEach(t => t.stop());
       this._localStream = null;
     }
-    if (this._remoteAudio) {
-      this._remoteAudio.srcObject = null;
-      this._remoteAudio = null;
-    }
+    // Reset the persistent audio element but don't remove it
+    const audioEl = document.getElementById('call-remote-audio');
+    if (audioEl) { audioEl.srcObject = null; audioEl.pause(); }
+    this._remoteAudio = null;
     this._state = 'idle';
     this._convId = null;
     this._muted = false;
@@ -451,7 +520,13 @@ const Call = {
   _startRingtone(type) {
     this._stopRingtone();
     try {
-      this._ringtoneCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      this._ringtoneCtx = new Ctx();
+      // iOS requires resume after creation
+      if (this._ringtoneCtx.state === 'suspended') {
+        this._ringtoneCtx.resume().catch(() => {});
+      }
       const osc = this._ringtoneCtx.createOscillator();
       const gain = this._ringtoneCtx.createGain();
       osc.connect(gain);
@@ -460,7 +535,6 @@ const Call = {
 
       if (type === 'incoming') {
         osc.frequency.value = 440;
-        // Ring pattern: on/off
         const now = this._ringtoneCtx.currentTime;
         for (let i = 0; i < 30; i++) {
           gain.gain.setValueAtTime(0.08, now + i * 1.5);
@@ -538,8 +612,9 @@ const Call = {
 
   _makeDraggable(el) {
     let offsetX = 0, offsetY = 0, dragging = false;
-    const header = el;
-    header.addEventListener('mousedown', (e) => {
+
+    // Mouse
+    el.addEventListener('mousedown', (e) => {
       if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
       dragging = true;
       offsetX = e.clientX - el.getBoundingClientRect().left;
@@ -554,22 +629,24 @@ const Call = {
       el.style.bottom = 'auto';
     });
     document.addEventListener('mouseup', () => { dragging = false; });
-    // Touch support
-    header.addEventListener('touchstart', (e) => {
+
+    // Touch — use non-passive so we can preventDefault to stop page scroll while dragging
+    el.addEventListener('touchstart', (e) => {
       if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
       dragging = true;
       const t = e.touches[0];
       offsetX = t.clientX - el.getBoundingClientRect().left;
       offsetY = t.clientY - el.getBoundingClientRect().top;
-    }, { passive: true });
-    document.addEventListener('touchmove', (e) => {
+    }, { passive: false });
+    el.addEventListener('touchmove', (e) => {
       if (!dragging) return;
+      e.preventDefault(); // Prevent page scrolling while dragging call bar
       const t = e.touches[0];
       el.style.left = (t.clientX - offsetX) + 'px';
       el.style.top = (t.clientY - offsetY) + 'px';
       el.style.right = 'auto';
       el.style.bottom = 'auto';
-    }, { passive: true });
+    }, { passive: false });
     document.addEventListener('touchend', () => { dragging = false; });
   },
 };

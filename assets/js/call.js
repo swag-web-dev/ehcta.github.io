@@ -41,13 +41,9 @@
       text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; border: none;
       -webkit-tap-highlight-color: transparent; touch-action: manipulation;
     }
-    .call-incoming__btn--accept {
-      background: #4aff7a; color: #000;
-    }
+    .call-incoming__btn--accept { background: #4aff7a; color: #000; }
     .call-incoming__btn--accept:hover { background: #3de06a; }
-    .call-incoming__btn--decline {
-      background: #e74c3c; color: #fff;
-    }
+    .call-incoming__btn--decline { background: #e74c3c; color: #fff; }
     .call-incoming__btn--decline:hover { background: #c0392b; }
 
     /* ── IN-CALL BAR (minimised) ── */
@@ -59,44 +55,20 @@
       box-shadow: 0 4px 20px rgba(0,0,0,0.5);
       padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     }
-    .call-bar__header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 10px;
-    }
-    .call-bar__name {
-      font-weight: 500; font-size: 0.9rem;
-    }
-    .call-bar__time {
-      font-size: 0.7rem; color: var(--color-text-muted, #888);
-      font-variant-numeric: tabular-nums;
-    }
-    .call-bar__status {
-      font-size: 0.7rem; color: var(--color-text-muted, #888);
-      margin-bottom: 10px;
-    }
+    .call-bar__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .call-bar__name { font-weight: 500; font-size: 0.9rem; }
+    .call-bar__time { font-size: 0.7rem; color: var(--color-text-muted, #888); font-variant-numeric: tabular-nums; }
+    .call-bar__status { font-size: 0.7rem; color: var(--color-text-muted, #888); margin-bottom: 10px; }
     .call-bar__status--connected { color: #4aff7a; }
-    .call-bar__volume {
-      display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
-    }
-    .call-bar__volume-label {
-      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--color-text-muted, #888); white-space: nowrap;
-    }
+    .call-bar__volume { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .call-bar__volume-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-muted, #888); white-space: nowrap; }
     .call-bar__volume-slider {
       flex: 1; -webkit-appearance: none; appearance: none;
       height: 4px; background: #333; outline: none; cursor: pointer;
     }
-    .call-bar__volume-slider::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 14px; height: 14px;
-      background: var(--color-text, #fff); border-radius: 0; cursor: pointer;
-    }
-    .call-bar__volume-slider::-moz-range-thumb {
-      width: 14px; height: 14px; background: var(--color-text, #fff);
-      border: none; border-radius: 0; cursor: pointer;
-    }
-    .call-bar__controls {
-      display: flex; gap: 8px;
-    }
+    .call-bar__volume-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: var(--color-text, #fff); border-radius: 0; cursor: pointer; }
+    .call-bar__volume-slider::-moz-range-thumb { width: 14px; height: 14px; background: var(--color-text, #fff); border: none; border-radius: 0; cursor: pointer; }
+    .call-bar__controls { display: flex; gap: 8px; }
     .call-bar__btn {
       flex: 1; padding: 8px; font-size: 0.75rem; font-family: var(--font-body, sans-serif);
       text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer;
@@ -105,12 +77,8 @@
       -webkit-tap-highlight-color: transparent; touch-action: manipulation;
     }
     .call-bar__btn:hover { background: rgba(255,255,255,0.05); }
-    .call-bar__btn--mute-active {
-      background: var(--color-text, #fff); color: var(--color-bg, #000);
-    }
-    .call-bar__btn--end {
-      background: #e74c3c; color: #fff; border-color: #e74c3c;
-    }
+    .call-bar__btn--mute-active { background: var(--color-text, #fff); color: var(--color-bg, #000); }
+    .call-bar__btn--end { background: #e74c3c; color: #fff; border-color: #e74c3c; }
     .call-bar__btn--end:hover { background: #c0392b; }
 
     /* ── CALL BUTTON IN HEADER ── */
@@ -122,31 +90,26 @@
     .chat-call-btn:hover { color: var(--color-text, #fff); }
     .chat-call-btn:disabled { opacity: 0.3; cursor: default; }
 
+    /* ── CALL SYSTEM MESSAGE ── */
+    .chat-call-notice {
+      text-align: center; padding: 8px 0; font-size: 0.7rem;
+      color: var(--color-text-muted, #888); letter-spacing: 0.04em;
+    }
+
     /* ── MOBILE RESPONSIVE ── */
     @media (max-width: 600px) {
-      .call-bar {
-        left: 8px; right: 8px; bottom: 8px;
-        min-width: auto; max-width: none;
-        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-      }
-      .call-incoming__card {
-        padding: 24px 20px;
-      }
-      .call-incoming__btn {
-        padding: 14px 20px; font-size: 0.9rem;
-      }
+      .call-bar { left: 8px; right: 8px; bottom: 8px; min-width: auto; max-width: none; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+      .call-incoming__card { padding: 24px 20px; }
+      .call-incoming__btn { padding: 14px 20px; font-size: 0.9rem; }
     }
   `;
   document.head.appendChild(style);
 
-  // iOS Safari: create a persistent hidden <audio> element for remote audio playback.
-  // iOS blocks Audio() objects created outside of user gestures, but a pre-existing
-  // <audio> element that gets its srcObject set during a user-initiated flow works.
+  // Persistent <audio> element for iOS compatibility
   const audioEl = document.createElement('audio');
   audioEl.id = 'call-remote-audio';
   audioEl.setAttribute('playsinline', '');
   audioEl.setAttribute('autoplay', '');
-  // WebKit needs the element in the DOM
   audioEl.style.display = 'none';
   document.body.appendChild(audioEl);
 })();
@@ -163,8 +126,10 @@ const Call = {
   _timer: null,
   _seconds: 0,
   _ringtoneAudio: null,
+  _ringTimeout: null,
+  _pendingIceCandidates: [], // Queue for ICE candidates that arrive before PC is ready
+  _isCaller: false,
 
-  // ICE servers for NAT traversal
   _iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -172,22 +137,17 @@ const Call = {
 
   // ── INITIATE CALL ──
   async start(convId) {
-    if (this._state !== 'idle') {
-      Toast.show('Already in a call', true);
-      return;
-    }
+    if (this._state !== 'idle') { Toast.show('Already in a call', true); return; }
     const conv = Chat._conversations.find(c => c.id === convId);
-    if (!conv || conv.status !== 'accepted') {
-      Toast.show('Cannot call this user', true);
-      return;
-    }
+    if (!conv || conv.status !== 'accepted') { Toast.show('Cannot call this user', true); return; }
 
     this._convId = convId;
     this._otherName = conv.other_user_name || 'Unknown';
     this._otherUid = conv.other_user_uid || '';
     this._state = 'calling';
+    this._isCaller = true;
+    this._pendingIceCandidates = [];
 
-    // Prime the audio element with a user gesture (required on iOS)
     this._primeAudio();
 
     try {
@@ -198,20 +158,35 @@ const Call = {
       return;
     }
 
-    // Send call request via WebSocket
     const myName = (document.getElementById('nav-display-name') || {}).textContent || 'Unknown';
-    this._sendSignal('call_request', { name: myName });
+    this._sendSignal('call_request', { name: myName, uid: this._getMyUid() });
     this._showCallBar('Calling...');
     this._startRingtone('outgoing');
+
+    // Auto-end after 2 ringtone cycles (~20 seconds)
+    this._ringTimeout = setTimeout(() => {
+      if (this._state === 'calling') {
+        this._sendSignal('call_end');
+        this._postCallMessage('missed');
+        Toast.show('No answer');
+        this._cleanup();
+      }
+    }, 20000);
   },
 
-  // Prime the persistent audio element so iOS allows playback later
+  _getMyUid() {
+    // Try to find our uid from a conversation where we know the other user
+    const conv = Chat._conversations.find(c => c.id === this._convId);
+    if (!conv) return '';
+    // Our uid is NOT other_user_uid, so get it from settings or nav
+    const el = document.getElementById('settings-unique-id');
+    if (el && el.value) return el.value;
+    return '';
+  },
+
   _primeAudio() {
     const el = document.getElementById('call-remote-audio');
-    if (el) {
-      // Play silence to unlock the element on iOS
-      el.play().catch(() => {});
-    }
+    if (el) el.play().catch(() => {});
   },
 
   // ── HANDLE INCOMING SIGNALS ──
@@ -219,37 +194,21 @@ const Call = {
     const signal = msg.signal;
     const data = msg.data;
     const convId = msg.conversation_id;
-    const fromUserId = msg.from;
 
     switch (signal) {
-      case 'call_request':
-        this._onIncomingCall(convId, fromUserId, data);
-        break;
-      case 'call_accept':
-        this._onCallAccepted(convId);
-        break;
-      case 'call_decline':
-        this._onCallDeclined();
-        break;
-      case 'call_end':
-        this._onCallEnded();
-        break;
-      case 'offer':
-        this._onOffer(convId, data);
-        break;
-      case 'answer':
-        this._onAnswer(data);
-        break;
-      case 'ice':
-        this._onIce(data);
-        break;
+      case 'call_request': this._onIncomingCall(convId, data); break;
+      case 'call_accept': this._onCallAccepted(); break;
+      case 'call_decline': this._onCallDeclined(); break;
+      case 'call_end': this._onCallEnded(); break;
+      case 'offer': this._onOffer(data); break;
+      case 'answer': this._onAnswer(data); break;
+      case 'ice': this._onIce(data); break;
     }
   },
 
   // ── INCOMING CALL ──
-  _onIncomingCall(convId, fromUserId, data) {
+  _onIncomingCall(convId, data) {
     if (this._state !== 'idle') {
-      // Already in a call, auto-decline
       const origConv = this._convId;
       this._convId = convId;
       this._sendSignal('call_decline');
@@ -258,13 +217,24 @@ const Call = {
     }
 
     this._convId = convId;
+    this._pendingIceCandidates = [];
+    this._isCaller = false;
     const conv = Chat._conversations.find(c => c.id === convId);
     this._otherName = conv ? (conv.other_user_name || 'Unknown') : (data && data.name || 'Unknown');
-    this._otherUid = conv ? (conv.other_user_uid || '') : '';
+    this._otherUid = data && data.uid ? data.uid : (conv ? (conv.other_user_uid || '') : '');
     this._state = 'ringing';
 
     this._startRingtone('incoming');
     this._showIncomingUI();
+
+    // Auto-decline after 20 seconds if not answered
+    this._ringTimeout = setTimeout(() => {
+      if (this._state === 'ringing') {
+        this._sendSignal('call_decline');
+        this._postCallMessage('missed');
+        this._cleanup();
+      }
+    }, 20000);
   },
 
   _showIncomingUI() {
@@ -293,10 +263,9 @@ const Call = {
 
   // ── ACCEPT CALL ──
   async accept() {
+    clearTimeout(this._ringTimeout);
     this._removeIncomingUI();
     this._stopRingtone();
-
-    // Prime audio on user gesture (iOS requirement — must happen in click handler)
     this._primeAudio();
 
     try {
@@ -311,11 +280,10 @@ const Call = {
     this._state = 'connected';
     this._sendSignal('call_accept');
     this._showCallBar('Connecting...');
-    // Wait for the caller to send an offer
   },
 
-  // ── DECLINE CALL ──
   decline() {
+    clearTimeout(this._ringTimeout);
     this._removeIncomingUI();
     this._stopRingtone();
     this._sendSignal('call_decline');
@@ -323,13 +291,14 @@ const Call = {
   },
 
   // ── CALL ACCEPTED BY OTHER SIDE ──
-  async _onCallAccepted(convId) {
+  async _onCallAccepted() {
+    clearTimeout(this._ringTimeout);
     this._stopRingtone();
     if (this._state !== 'calling') return;
     this._state = 'connected';
     this._updateCallBarStatus('Connecting...');
 
-    // Caller creates the offer
+    // Caller creates the peer connection and offer
     await this._createPeerConnection();
     try {
       const offer = await this._pc.createOffer();
@@ -342,26 +311,33 @@ const Call = {
   },
 
   _onCallDeclined() {
+    clearTimeout(this._ringTimeout);
     this._stopRingtone();
-    Toast.show('Call declined');
+    if (this._state === 'calling') {
+      Toast.show('Call declined');
+    }
     this._cleanup();
   },
 
   _onCallEnded() {
     Toast.show('Call ended');
+    this._postCallMessage('ended');
     this._cleanup();
   },
 
   // ── WEBRTC OFFER/ANSWER/ICE ──
-  async _onOffer(convId, data) {
+  async _onOffer(data) {
     if (this._state !== 'connected') return;
     await this._createPeerConnection();
     try {
       await this._pc.setRemoteDescription(new RTCSessionDescription({ type: data.type, sdp: data.sdp }));
+      // Process any queued ICE candidates now that remote description is set
+      await this._drainIceCandidates();
       const answer = await this._pc.createAnswer();
       await this._pc.setLocalDescription(answer);
       this._sendSignal('answer', { sdp: answer.sdp, type: answer.type });
     } catch (e) {
+      console.error('[CALL] offer handling failed:', e);
       Toast.show('Call setup failed', true);
       this.end();
     }
@@ -371,17 +347,41 @@ const Call = {
     if (!this._pc) return;
     try {
       await this._pc.setRemoteDescription(new RTCSessionDescription({ type: data.type, sdp: data.sdp }));
+      // Process any queued ICE candidates now that remote description is set
+      await this._drainIceCandidates();
     } catch (e) {
+      console.error('[CALL] answer handling failed:', e);
       Toast.show('Call setup failed', true);
       this.end();
     }
   },
 
   _onIce(data) {
-    if (!this._pc || !data) return;
+    if (!data) return;
+    // Queue ICE candidates if PC isn't ready or remote description isn't set
+    if (!this._pc || !this._pc.remoteDescription || !this._pc.remoteDescription.type) {
+      console.log('[CALL] queuing ICE candidate (PC not ready)');
+      this._pendingIceCandidates.push(data);
+      return;
+    }
     try {
       this._pc.addIceCandidate(new RTCIceCandidate(data));
-    } catch (e) {}
+    } catch (e) {
+      console.error('[CALL] failed to add ICE candidate:', e);
+    }
+  },
+
+  async _drainIceCandidates() {
+    if (this._pendingIceCandidates.length === 0) return;
+    console.log('[CALL] draining', this._pendingIceCandidates.length, 'queued ICE candidates');
+    for (const candidate of this._pendingIceCandidates) {
+      try {
+        await this._pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.error('[CALL] failed to add queued ICE candidate:', e);
+      }
+    }
+    this._pendingIceCandidates = [];
   },
 
   // ── PEER CONNECTION ──
@@ -391,51 +391,30 @@ const Call = {
 
     // Add local audio tracks
     if (this._localStream) {
-      const tracks = this._localStream.getTracks();
-      console.log('[CALL] adding', tracks.length, 'local tracks');
-      for (const track of tracks) {
-        console.log('[CALL] local track:', track.kind, 'enabled:', track.enabled, 'readyState:', track.readyState);
+      for (const track of this._localStream.getTracks()) {
         this._pc.addTrack(track, this._localStream);
       }
-    } else {
-      console.warn('[CALL] no local stream when creating peer connection!');
     }
 
-    // Handle remote audio — use the persistent <audio> element for iOS compatibility
+    // Handle remote audio
     this._pc.ontrack = (e) => {
-      console.log('[CALL] ontrack fired, streams:', e.streams.length, 'tracks:', e.streams[0]?.getTracks().length);
+      console.log('[CALL] ontrack fired, streams:', e.streams.length);
       const stream = e.streams[0];
-
-      // Log audio track state
-      for (const t of stream.getAudioTracks()) {
-        console.log('[CALL] remote audio track:', t.label, 'enabled:', t.enabled, 'muted:', t.muted, 'readyState:', t.readyState);
-      }
-
       const audioEl = document.getElementById('call-remote-audio');
       if (audioEl) {
         audioEl.srcObject = stream;
         audioEl.muted = false;
         audioEl.volume = 1.0;
-        const playPromise = audioEl.play();
-        if (playPromise) {
-          playPromise.then(() => console.log('[CALL] audio playing OK'))
-                     .catch(err => console.error('[CALL] audio play failed:', err));
-        }
+        audioEl.play().then(() => console.log('[CALL] audio playing OK'))
+                      .catch(err => console.error('[CALL] audio play failed:', err));
         this._remoteAudio = audioEl;
-      } else {
-        // Fallback: create Audio object (works on desktop/Android)
-        const audio = new Audio();
-        audio.autoplay = true;
-        audio.srcObject = stream;
-        audio.play().catch(err => console.error('[CALL] fallback audio play failed:', err));
-        this._remoteAudio = audio;
       }
-      // Apply current volume
       const slider = document.getElementById('call-volume-slider');
       if (slider && this._remoteAudio) this._remoteAudio.volume = slider.value / 100;
 
       this._updateCallBarStatus('Connected');
       this._startTimer();
+      this._postCallMessage('connected');
     };
 
     // Send ICE candidates
@@ -455,7 +434,6 @@ const Call = {
         this.end();
       } else if (state === 'disconnected') {
         this._updateCallBarStatus('Reconnecting...');
-        // Give it a few seconds to recover before ending
         this._disconnectTimer = setTimeout(() => {
           if (this._pc && this._pc.iceConnectionState === 'disconnected') {
             Toast.show('Call connection lost', true);
@@ -472,21 +450,22 @@ const Call = {
   // ── END CALL ──
   end() {
     this._sendSignal('call_end');
+    this._postCallMessage('ended');
     this._cleanup();
   },
 
   _cleanup() {
+    clearTimeout(this._ringTimeout);
+    clearTimeout(this._disconnectTimer);
     this._stopRingtone();
     this._removeIncomingUI();
     this._removeCallBar();
     this._stopTimer();
-    clearTimeout(this._disconnectTimer);
     if (this._pc) { this._pc.close(); this._pc = null; }
     if (this._localStream) {
       this._localStream.getTracks().forEach(t => t.stop());
       this._localStream = null;
     }
-    // Reset the persistent audio element but don't remove it
     const audioEl = document.getElementById('call-remote-audio');
     if (audioEl) { audioEl.srcObject = null; audioEl.pause(); }
     this._remoteAudio = null;
@@ -494,9 +473,58 @@ const Call = {
     this._convId = null;
     this._muted = false;
     this._seconds = 0;
+    this._pendingIceCandidates = [];
+    this._isCaller = false;
   },
 
-  // ── MUTE TOGGLE ──
+  // ── POST CALL MESSAGE IN CHAT ──
+  _postCallMessage(type) {
+    if (!this._convId) return;
+    const convId = this._convId;
+    const otherUid = this._otherUid;
+    const isCaller = this._isCaller;
+    const duration = this._seconds;
+
+    let text = '';
+    if (type === 'connected') {
+      // Don't post on connect, post on end
+      return;
+    } else if (type === 'ended' && duration > 0) {
+      text = isCaller
+        ? '\u{1F4DE} You called @' + otherUid + ' \u00B7 ' + this._formatDuration(duration)
+        : '\u{1F4DE} @' + otherUid + ' called you \u00B7 ' + this._formatDuration(duration);
+    } else if (type === 'ended') {
+      text = isCaller
+        ? '\u{1F4DE} You called @' + otherUid
+        : '\u{1F4DE} @' + otherUid + ' called you';
+    } else if (type === 'missed') {
+      text = isCaller
+        ? '\u{1F4DE} You called @' + otherUid + ' \u00B7 No answer'
+        : '\u{1F4DE} Missed call from @' + otherUid;
+    }
+
+    if (!text) return;
+
+    // Insert as a local-only system message in the chat
+    const msgs = Chat._messages[convId];
+    if (msgs) {
+      msgs.push({
+        id: '_call_' + Date.now(),
+        conversation_id: convId,
+        sender_id: '__system__',
+        created_at: new Date().toISOString(),
+        _plaintext: text,
+        _isMine: false,
+        _isCallNotice: true,
+      });
+      if (Chat._activeConvId === convId) {
+        Chat.renderMessages(convId);
+        Chat.scrollToBottom();
+      }
+    }
+  },
+
+  // ── MUTE/VOLUME ──
   toggleMute() {
     if (!this._localStream) return;
     this._muted = !this._muted;
@@ -508,14 +536,11 @@ const Call = {
     }
   },
 
-  // ── VOLUME CONTROL ──
   setVolume(val) {
-    if (this._remoteAudio) {
-      this._remoteAudio.volume = val / 100;
-    }
+    if (this._remoteAudio) this._remoteAudio.volume = val / 100;
   },
 
-  // ── CALL TIMER ──
+  // ── TIMER ──
   _startTimer() {
     this._stopTimer();
     this._seconds = 0;
@@ -569,7 +594,7 @@ const Call = {
     }
   },
 
-  // ── CALL BAR UI (minimised, draggable) ──
+  // ── CALL BAR UI ──
   _showCallBar(statusText) {
     this._removeCallBar();
     const el = document.createElement('div');
@@ -609,8 +634,6 @@ const Call = {
 
   _makeDraggable(el) {
     let offsetX = 0, offsetY = 0, dragging = false;
-
-    // Mouse
     el.addEventListener('mousedown', (e) => {
       if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
       dragging = true;
@@ -622,12 +645,9 @@ const Call = {
       if (!dragging) return;
       el.style.left = (e.clientX - offsetX) + 'px';
       el.style.top = (e.clientY - offsetY) + 'px';
-      el.style.right = 'auto';
-      el.style.bottom = 'auto';
+      el.style.right = 'auto'; el.style.bottom = 'auto';
     });
     document.addEventListener('mouseup', () => { dragging = false; });
-
-    // Touch — use non-passive so we can preventDefault to stop page scroll while dragging
     el.addEventListener('touchstart', (e) => {
       if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
       dragging = true;
@@ -637,12 +657,11 @@ const Call = {
     }, { passive: false });
     el.addEventListener('touchmove', (e) => {
       if (!dragging) return;
-      e.preventDefault(); // Prevent page scrolling while dragging call bar
+      e.preventDefault();
       const t = e.touches[0];
       el.style.left = (t.clientX - offsetX) + 'px';
       el.style.top = (t.clientY - offsetY) + 'px';
-      el.style.right = 'auto';
-      el.style.bottom = 'auto';
+      el.style.right = 'auto'; el.style.bottom = 'auto';
     }, { passive: false });
     document.addEventListener('touchend', () => { dragging = false; });
   },

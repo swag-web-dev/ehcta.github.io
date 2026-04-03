@@ -1182,6 +1182,11 @@ const Chat = {
     let lastDate = '';
 
     for (const m of msgs) {
+      // Call notice (system message)
+      if (m._isCallNotice) {
+        html += `<div class="chat-call-notice">${this._esc(m._plaintext)}</div>`;
+        continue;
+      }
       // Day separator
       const msgDate = this._getDayLabel(m.created_at);
       if (msgDate !== lastDate) {

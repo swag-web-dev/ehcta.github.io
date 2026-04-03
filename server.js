@@ -1097,13 +1097,17 @@ function broadcastToConversation(conversationId, excludeUserId) {
 
 function sendCallSignal(conversationId, fromUserId, signalData) {
   const set = wsClients.get(conversationId);
+  console.log('[CALL]', signalData.signal, 'from:', fromUserId?.slice(0,8), 'conv:', conversationId?.slice(0,8), 'subscribers:', set ? set.size : 0);
   if (!set) return;
   const msg = JSON.stringify({ type: 'call_signal', conversation_id: conversationId, from: fromUserId, ...signalData });
+  let sent = 0;
   for (const ws of set) {
     if (ws.readyState === WebSocket.OPEN && ws._userId !== fromUserId) {
       ws.send(msg);
+      sent++;
     }
   }
+  console.log('[CALL] sent to', sent, 'recipients');
 }
 
 // ── START ──

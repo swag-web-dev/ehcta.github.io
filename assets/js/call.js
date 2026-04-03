@@ -391,24 +391,44 @@ const Call = {
 
     // Add local audio tracks
     if (this._localStream) {
-      for (const track of this._localStream.getTracks()) {
+      const tracks = this._localStream.getTracks();
+      console.log('[CALL] adding', tracks.length, 'local tracks');
+      for (const track of tracks) {
+        console.log('[CALL] local track:', track.kind, 'enabled:', track.enabled, 'readyState:', track.readyState);
         this._pc.addTrack(track, this._localStream);
       }
+    } else {
+      console.warn('[CALL] no local stream when creating peer connection!');
     }
 
     // Handle remote audio — use the persistent <audio> element for iOS compatibility
     this._pc.ontrack = (e) => {
+      console.log('[CALL] ontrack fired, streams:', e.streams.length, 'tracks:', e.streams[0]?.getTracks().length);
+      const stream = e.streams[0];
+
+      // Log audio track state
+      for (const t of stream.getAudioTracks()) {
+        console.log('[CALL] remote audio track:', t.label, 'enabled:', t.enabled, 'muted:', t.muted, 'readyState:', t.readyState);
+      }
+
       const audioEl = document.getElementById('call-remote-audio');
       if (audioEl) {
-        audioEl.srcObject = e.streams[0];
-        // iOS needs explicit play() call
-        audioEl.play().catch(() => {});
+        audioEl.srcObject = stream;
+        audioEl.muted = false;
+        audioEl.volume = 1.0;
+        const playPromise = audioEl.play();
+        if (playPromise) {
+          playPromise.then(() => console.log('[CALL] audio playing OK'))
+                     .catch(err => console.error('[CALL] audio play failed:', err));
+        }
         this._remoteAudio = audioEl;
       } else {
         // Fallback: create Audio object (works on desktop/Android)
-        this._remoteAudio = new Audio();
-        this._remoteAudio.autoplay = true;
-        this._remoteAudio.srcObject = e.streams[0];
+        const audio = new Audio();
+        audio.autoplay = true;
+        audio.srcObject = stream;
+        audio.play().catch(err => console.error('[CALL] fallback audio play failed:', err));
+        this._remoteAudio = audio;
       }
       // Apply current volume
       const slider = document.getElementById('call-volume-slider');
@@ -429,6 +449,7 @@ const Call = {
     this._pc.oniceconnectionstatechange = () => {
       if (!this._pc) return;
       const state = this._pc.iceConnectionState;
+      console.log('[CALL] ICE state:', state);
       if (state === 'failed') {
         Toast.show('Call connection failed', true);
         this.end();

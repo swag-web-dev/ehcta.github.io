@@ -1099,10 +1099,6 @@ function broadcastToConversation(conversationId, excludeUserId) {
 
 // ── START ──
 initDB().then(async () => {
-  // ONE-TIME WIPE: Delete all data and accounts — remove this block after deploy
-  console.log('[WIPE] Deleting all data and accounts...');
-  await pool.query('TRUNCATE users, conversations, messages, blocked_users, hidden_conversations, read_receipts, typing_status, pinned_messages, attachments, key_history, audit_log, rate_limits CASCADE').catch(e => console.error('[WIPE] error:', e.message));
-  console.log('[WIPE] Done. All data deleted.');
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`EHCTA running at http://localhost:${PORT}`);

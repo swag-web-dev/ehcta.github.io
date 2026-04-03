@@ -852,9 +852,6 @@ const Chat = {
             }
             this._checkConversations();
           }
-          if (msg.type === 'call_signal' && typeof Call !== 'undefined') {
-            Call.handleSignal(msg);
-          }
         } catch(err) {}
       };
       this._ws.onclose = () => {
@@ -1182,11 +1179,6 @@ const Chat = {
     let lastDate = '';
 
     for (const m of msgs) {
-      // Call notice (system message)
-      if (m._isCallNotice) {
-        html += `<div class="chat-call-notice">${this._esc(m._plaintext)}</div>`;
-        continue;
-      }
       // Day separator
       const msgDate = this._getDayLabel(m.created_at);
       if (msgDate !== lastDate) {
@@ -1264,8 +1256,6 @@ const Chat = {
     if (area) area.style.display = show ? 'block' : 'none';
     const pinBtn = document.getElementById('chat-pin-toggle');
     if (pinBtn) pinBtn.style.display = show ? 'inline' : 'none';
-    const callBtn = document.getElementById('chat-call-btn');
-    if (callBtn) callBtn.style.display = show ? 'inline' : 'none';
   },
 
   _formatTime(iso) {

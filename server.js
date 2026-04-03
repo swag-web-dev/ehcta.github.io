@@ -1073,30 +1073,6 @@ app.post('/api/chat/conversations/ttl', requireAuth, verifyCsrf, async (req, res
   } catch (e) { fail(res, 'Internal error', 500); }
 });
 
-// ── ICE/TURN SERVERS ──
-app.get('/api/ice-servers', requireAuth, (req, res) => {
-  // Generate time-limited TURN credentials using Open Relay's static auth secret
-  const turnSecret = 'openrelayprojectsecret';
-  const expiry = Math.floor(Date.now() / 1000) + 86400; // 24 hours
-  const username = expiry.toString();
-  const credential = crypto.createHmac('sha1', turnSecret).update(username).digest('base64');
-
-  ok(res, [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    // Open Relay TURN servers (free, no signup)
-    { urls: 'turn:staticauth.openrelay.metered.ca:80', username, credential },
-    { urls: 'turn:staticauth.openrelay.metered.ca:443', username, credential },
-    { urls: 'turn:staticauth.openrelay.metered.ca:443?transport=tcp', username, credential },
-    { urls: 'turns:staticauth.openrelay.metered.ca:443', username, credential },
-    // Also try standard credentials as fallback
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-  ]);
-});
 
 // ── SERVE FRONTEND ──
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
@@ -1120,20 +1096,6 @@ function broadcastToConversation(conversationId, excludeUserId) {
   }
 }
 
-function sendCallSignal(conversationId, fromUserId, signalData) {
-  const set = wsClients.get(conversationId);
-  console.log('[CALL]', signalData.signal, 'from:', fromUserId?.slice(0,8), 'conv:', conversationId?.slice(0,8), 'subscribers:', set ? set.size : 0);
-  if (!set) return;
-  const msg = JSON.stringify({ type: 'call_signal', conversation_id: conversationId, from: fromUserId, ...signalData });
-  let sent = 0;
-  for (const ws of set) {
-    if (ws.readyState === WebSocket.OPEN && ws._userId !== fromUserId) {
-      ws.send(msg);
-      sent++;
-    }
-  }
-  console.log('[CALL] sent to', sent, 'recipients');
-}
 
 // ── START ──
 initDB().then(async () => {
@@ -1184,13 +1146,6 @@ initDB().then(async () => {
           ws._convIds.add(msg.conversation_id);
           if (!wsClients.has(msg.conversation_id)) wsClients.set(msg.conversation_id, new Set());
           wsClients.get(msg.conversation_id).add(ws);
-        }
-        // Call signaling relay
-        if (msg.type === 'call_signal' && ws._userId && msg.conversation_id) {
-          sendCallSignal(msg.conversation_id, ws._userId, {
-            signal: msg.signal, // 'call_request', 'call_accept', 'call_decline', 'call_end', 'offer', 'answer', 'ice'
-            data: msg.data || null,
-          });
         }
       } catch(e) {}
     });

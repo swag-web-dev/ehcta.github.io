@@ -133,6 +133,10 @@ const Call = {
   _iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    // TURN relay fallback — needed when peers can't connect directly (symmetric NAT, mobile networks)
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ],
 
   // ── INITIATE CALL ──
@@ -420,8 +424,15 @@ const Call = {
     // Send ICE candidates
     this._pc.onicecandidate = (e) => {
       if (e.candidate) {
+        console.log('[CALL] local ICE candidate:', e.candidate.type, e.candidate.protocol, e.candidate.address);
         this._sendSignal('ice', e.candidate.toJSON());
+      } else {
+        console.log('[CALL] ICE gathering complete');
       }
+    };
+
+    this._pc.onicegatheringstatechange = () => {
+      console.log('[CALL] ICE gathering state:', this._pc.iceGatheringState);
     };
 
     // Monitor connection state

@@ -390,22 +390,25 @@ const Call = {
 
   // ── PEER CONNECTION ──
   async _fetchIceServers() {
-    if (this._iceServers) return this._iceServers;
     try {
-      this._iceServers = await API.get('api/ice-servers');
-      console.log('[CALL] got ICE servers:', this._iceServers.length, this._iceServers.map(s => s.urls));
+      const servers = await API.get('api/ice-servers');
+      console.log('[CALL] got ICE servers:', servers.length);
+      for (const s of servers) console.log('[CALL]   -', s.urls, s.username ? '(has credentials)' : '(no credentials)');
+      return servers;
     } catch(e) {
-      console.warn('[CALL] failed to fetch ICE servers, using STUN only');
-      this._iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+      console.warn('[CALL] failed to fetch ICE servers, using STUN only:', e.message);
+      return [{ urls: 'stun:stun.l.google.com:19302' }];
     }
-    return this._iceServers;
   },
 
   async _createPeerConnection() {
     if (this._pc) return;
     const iceServers = await this._fetchIceServers();
     console.log('[CALL] creating peer connection with', iceServers.length, 'ICE servers');
-    this._pc = new RTCPeerConnection({ iceServers });
+    this._pc = new RTCPeerConnection({
+      iceServers: iceServers,
+      iceTransportPolicy: 'all', // Try both direct and relay
+    });
 
     // Add local audio tracks
     if (this._localStream) {

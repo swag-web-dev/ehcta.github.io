@@ -1075,30 +1075,27 @@ app.post('/api/chat/conversations/ttl', requireAuth, verifyCsrf, async (req, res
 
 // ── ICE/TURN SERVERS ──
 app.get('/api/ice-servers', requireAuth, (req, res) => {
-  // Generate time-limited TURN credentials using HMAC
-  // This works with coturn configured with use-auth-secret and static-auth-secret
-  const turnSecret = process.env.TURN_SECRET || '';
-  const turnServer = process.env.TURN_SERVER || '';
+  // Generate time-limited TURN credentials using Open Relay's static auth secret
+  const turnSecret = 'openrelayprojectsecret';
+  const expiry = Math.floor(Date.now() / 1000) + 86400; // 24 hours
+  const username = expiry.toString();
+  const credential = crypto.createHmac('sha1', turnSecret).update(username).digest('base64');
 
-  const servers = [
+  ok(res, [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-  ];
-
-  if (turnServer && turnSecret) {
-    const username = Math.floor(Date.now() / 1000 + 86400) + ':ehcta';
-    const credential = crypto.createHmac('sha1', turnSecret).update(username).digest('base64');
-    servers.push(
-      { urls: 'turn:' + turnServer + ':3478', username, credential },
-      { urls: 'turn:' + turnServer + ':3478?transport=tcp', username, credential },
-      { urls: 'turns:' + turnServer + ':5349', username, credential },
-    );
-  }
-
-  ok(res, servers);
+    // Open Relay TURN servers (free, no signup)
+    { urls: 'turn:staticauth.openrelay.metered.ca:80', username, credential },
+    { urls: 'turn:staticauth.openrelay.metered.ca:443', username, credential },
+    { urls: 'turn:staticauth.openrelay.metered.ca:443?transport=tcp', username, credential },
+    { urls: 'turns:staticauth.openrelay.metered.ca:443', username, credential },
+    // Also try standard credentials as fallback
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  ]);
 });
 
 // ── SERVE FRONTEND ──

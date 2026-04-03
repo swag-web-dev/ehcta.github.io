@@ -1095,6 +1095,17 @@ function broadcastToConversation(conversationId, excludeUserId) {
   }
 }
 
+function sendCallSignal(conversationId, fromUserId, signalData) {
+  const set = wsClients.get(conversationId);
+  if (!set) return;
+  const msg = JSON.stringify({ type: 'call_signal', conversation_id: conversationId, from: fromUserId, ...signalData });
+  for (const ws of set) {
+    if (ws.readyState === WebSocket.OPEN && ws._userId !== fromUserId) {
+      ws.send(msg);
+    }
+  }
+}
+
 // ── START ──
 initDB().then(async () => {
   // Fix conversations stuck as 'pending' that have messages (they were accepted but got reset)
@@ -1144,6 +1155,13 @@ initDB().then(async () => {
           ws._convIds.add(msg.conversation_id);
           if (!wsClients.has(msg.conversation_id)) wsClients.set(msg.conversation_id, new Set());
           wsClients.get(msg.conversation_id).add(ws);
+        }
+        // Call signaling relay
+        if (msg.type === 'call_signal' && ws._userId && msg.conversation_id) {
+          sendCallSignal(msg.conversation_id, ws._userId, {
+            signal: msg.signal, // 'call_request', 'call_accept', 'call_decline', 'call_end', 'offer', 'answer', 'ice'
+            data: msg.data || null,
+          });
         }
       } catch(e) {}
     });

@@ -480,6 +480,10 @@ const Chat = {
       const convs = await API.get('api/chat/conversations');
       this._conversations = convs || [];
       this.renderConversations();
+      // Subscribe to all conversations for call signals
+      for (const c of this._conversations) {
+        if (c.status === 'accepted') this._subscribeConversation(c.id);
+      }
     } catch (e) { console.error('Failed to load conversations:', e); }
   },
 
@@ -847,6 +851,9 @@ const Chat = {
               this.loadMessages(this._activeConvId);
             }
             this._checkConversations();
+          }
+          if (msg.type === 'call_signal' && typeof Call !== 'undefined') {
+            Call.handleSignal(msg);
           }
         } catch(err) {}
       };
@@ -1252,6 +1259,8 @@ const Chat = {
     if (area) area.style.display = show ? 'block' : 'none';
     const pinBtn = document.getElementById('chat-pin-toggle');
     if (pinBtn) pinBtn.style.display = show ? 'inline' : 'none';
+    const callBtn = document.getElementById('chat-call-btn');
+    if (callBtn) callBtn.style.display = show ? 'inline' : 'none';
   },
 
   _formatTime(iso) {

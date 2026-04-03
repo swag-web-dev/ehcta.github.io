@@ -166,6 +166,7 @@
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
                 <span id="chat-header-status" style="font-size:0.65rem;color:var(--color-text-muted);"></span>
+                <button id="chat-call-btn" class="chat-call-btn" style="display:none;" title="Audio call" onclick="Call.start(Chat._activeConvId)">&#128222;</button>
                 <button id="chat-pin-toggle" style="display:none;background:none;border:none;color:var(--color-text-muted);cursor:pointer;font-size:1rem;padding:2px;" title="Pinned messages" onclick="Chat.togglePinPanel()">&#128204;</button>
               </div>
             </div>
@@ -536,6 +537,7 @@
   <script src="assets/js/font-picker.js"></script>
   <script src="assets/js/settings.js"></script>
   <script src="assets/js/chat.js"></script>
+  <script src="assets/js/call.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

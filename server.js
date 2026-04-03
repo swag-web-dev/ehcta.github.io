@@ -1073,6 +1073,34 @@ app.post('/api/chat/conversations/ttl', requireAuth, verifyCsrf, async (req, res
   } catch (e) { fail(res, 'Internal error', 500); }
 });
 
+// ── ICE/TURN SERVERS ──
+app.get('/api/ice-servers', requireAuth, (req, res) => {
+  // Generate time-limited TURN credentials using HMAC
+  // This works with coturn configured with use-auth-secret and static-auth-secret
+  const turnSecret = process.env.TURN_SECRET || '';
+  const turnServer = process.env.TURN_SERVER || '';
+
+  const servers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+  ];
+
+  if (turnServer && turnSecret) {
+    const username = Math.floor(Date.now() / 1000 + 86400) + ':ehcta';
+    const credential = crypto.createHmac('sha1', turnSecret).update(username).digest('base64');
+    servers.push(
+      { urls: 'turn:' + turnServer + ':3478', username, credential },
+      { urls: 'turn:' + turnServer + ':3478?transport=tcp', username, credential },
+      { urls: 'turns:' + turnServer + ':5349', username, credential },
+    );
+  }
+
+  ok(res, servers);
+});
+
 // ── SERVE FRONTEND ──
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 

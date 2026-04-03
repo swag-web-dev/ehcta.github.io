@@ -130,14 +130,7 @@ const Call = {
   _pendingIceCandidates: [], // Queue for ICE candidates that arrive before PC is ready
   _isCaller: false,
 
-  _iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    // TURN relay fallback — needed when peers can't connect directly (symmetric NAT, mobile networks)
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-  ],
+  _iceServers: null, // Fetched from server
 
   // ── INITIATE CALL ──
   async start(convId) {
@@ -306,9 +299,12 @@ const Call = {
     await this._createPeerConnection();
     try {
       const offer = await this._pc.createOffer();
+      console.log('[CALL] offer created, SDP has audio:', offer.sdp.includes('m=audio'));
       await this._pc.setLocalDescription(offer);
+      console.log('[CALL] local description set, signaling state:', this._pc.signalingState);
       this._sendSignal('offer', { sdp: offer.sdp, type: offer.type });
     } catch (e) {
+      console.error('[CALL] offer creation failed:', e);
       Toast.show('Call setup failed', true);
       this.end();
     }
@@ -334,11 +330,15 @@ const Call = {
     if (this._state !== 'connected') return;
     await this._createPeerConnection();
     try {
+      console.log('[CALL] received offer, SDP has audio:', data.sdp.includes('m=audio'));
       await this._pc.setRemoteDescription(new RTCSessionDescription({ type: data.type, sdp: data.sdp }));
+      console.log('[CALL] remote description set, signaling state:', this._pc.signalingState);
       // Process any queued ICE candidates now that remote description is set
       await this._drainIceCandidates();
       const answer = await this._pc.createAnswer();
+      console.log('[CALL] answer created, SDP has audio:', answer.sdp.includes('m=audio'));
       await this._pc.setLocalDescription(answer);
+      console.log('[CALL] local description set (answer), signaling state:', this._pc.signalingState);
       this._sendSignal('answer', { sdp: answer.sdp, type: answer.type });
     } catch (e) {
       console.error('[CALL] offer handling failed:', e);
@@ -389,9 +389,23 @@ const Call = {
   },
 
   // ── PEER CONNECTION ──
+  async _fetchIceServers() {
+    if (this._iceServers) return this._iceServers;
+    try {
+      this._iceServers = await API.get('api/ice-servers');
+      console.log('[CALL] got ICE servers:', this._iceServers.length, this._iceServers.map(s => s.urls));
+    } catch(e) {
+      console.warn('[CALL] failed to fetch ICE servers, using STUN only');
+      this._iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+    }
+    return this._iceServers;
+  },
+
   async _createPeerConnection() {
     if (this._pc) return;
-    this._pc = new RTCPeerConnection({ iceServers: this._iceServers });
+    const iceServers = await this._fetchIceServers();
+    console.log('[CALL] creating peer connection with', iceServers.length, 'ICE servers');
+    this._pc = new RTCPeerConnection({ iceServers });
 
     // Add local audio tracks
     if (this._localStream) {
@@ -424,15 +438,19 @@ const Call = {
     // Send ICE candidates
     this._pc.onicecandidate = (e) => {
       if (e.candidate) {
-        console.log('[CALL] local ICE candidate:', e.candidate.type, e.candidate.protocol, e.candidate.address);
+        console.log('[CALL] local ICE candidate:', e.candidate.type || 'unknown', e.candidate.protocol, e.candidate.candidate?.slice(0, 80));
         this._sendSignal('ice', e.candidate.toJSON());
       } else {
-        console.log('[CALL] ICE gathering complete');
+        console.log('[CALL] ICE gathering complete, total candidates sent');
       }
     };
 
     this._pc.onicegatheringstatechange = () => {
-      console.log('[CALL] ICE gathering state:', this._pc.iceGatheringState);
+      if (this._pc) console.log('[CALL] ICE gathering state:', this._pc.iceGatheringState);
+    };
+
+    this._pc.onsignalingstatechange = () => {
+      if (this._pc) console.log('[CALL] signaling state:', this._pc.signalingState);
     };
 
     // Monitor connection state

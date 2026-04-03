@@ -463,6 +463,7 @@ const Chat = {
         myPublicKey: data.my_public_key, user1_id: data.user1_id, user2_id: data.user2_id,
       };
       // Show UI immediately, load data in parallel
+      this._shouldScrollBottom = true;
       this._showInputArea(true);
       this.showConvPanel();
       this._subscribeConversation(data.conversation_id);
@@ -1123,6 +1124,7 @@ const Chat = {
 
   async _openConversation(convId, otherUid) {
     this._lastStatus = null;
+    this._shouldScrollBottom = true;
     this.showConvPanel();
     if (!this._activeConvMeta || this._activeConvMeta.id !== convId) {
       await this.startConversation(otherUid);
@@ -1167,7 +1169,8 @@ const Chat = {
       return;
     }
 
-    const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    const wasAtBottom = this._shouldScrollBottom || container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    this._shouldScrollBottom = false;
     let html = '';
     let lastDate = '';
 

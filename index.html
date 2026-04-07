@@ -57,7 +57,7 @@
         <div style="padding:0;">
           <div class="input-group">
             <label for="seed-input">Seed Phrase</label>
-            <textarea id="seed-input" class="input" rows="3" placeholder="Enter your 24-word seed phrase..." style="-webkit-text-security:disc;-moz-text-security:disc;text-security:disc;"></textarea>
+            <textarea id="seed-input" class="input" rows="3" placeholder="Enter your 24-word seed phrase..." style="-webkit-text-security:disc;-moz-text-security:disc;"></textarea>
             <div style="display:flex;gap:6px;margin-top:6px;">
               <button type="button" id="seed-paste-btn" class="btn btn--small" onclick="(async function(){try{var t=await navigator.clipboard.readText();if(t)document.getElementById('seed-input').value=t;}catch(e){document.getElementById('seed-input').focus();document.execCommand('paste');}})()">PASTE</button>
               <button type="button" id="seed-show-btn" class="btn btn--small" onclick="(function(){var ta=document.getElementById('seed-input'),btn=document.getElementById('seed-show-btn');if(ta.style.webkitTextSecurity==='disc'||ta.style.textSecurity==='disc'){ta.style.webkitTextSecurity='none';ta.style.MozTextSecurity='none';ta.style.textSecurity='none';btn.textContent='HIDE';}else{ta.style.webkitTextSecurity='disc';ta.style.MozTextSecurity='disc';ta.style.textSecurity='disc';btn.textContent='SHOW';}})()">SHOW</button>
@@ -76,7 +76,7 @@
               <p style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:16px;">Your account has additional security enabled.</p>
               <div class="input-group" id="login-pin-group" style="display:none;">
                 <label for="seed-pin">PIN</label>
-                <input type="text" id="seed-pin" class="input" placeholder="Enter your PIN" autocomplete="off" maxlength="6" data-1p-ignore="true" data-lpignore="true" data-form-type="other" style="-webkit-text-security:disc;text-security:disc;">
+                <input type="text" id="seed-pin" class="input" placeholder="Enter your PIN" autocomplete="off" maxlength="6" data-1p-ignore="true" data-lpignore="true" data-form-type="other" style="-webkit-text-security:disc;">
               </div>
               <div class="input-group" id="totp-login-group" style="display:none;">
                 <label for="totp-login-input">Authenticator Code</label>
@@ -302,11 +302,11 @@
               <div style="font-size:0.8rem;font-weight:500;margin-bottom:8px;" id="pin-form-title">Set your PIN</div>
               <div class="input-group" style="margin-bottom:6px;">
                 <label for="settings-pin-input">PIN (4-6 chars)</label>
-                <input type="text" id="settings-pin-input" class="input" placeholder="PIN..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;text-security:disc;padding:6px 10px;font-size:0.85rem;">
+                <input type="text" id="settings-pin-input" class="input" placeholder="PIN..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;padding:6px 10px;font-size:0.85rem;">
               </div>
               <div class="input-group" style="margin-bottom:6px;" id="pin-confirm-group">
                 <label for="settings-pin-confirm">Confirm</label>
-                <input type="text" id="settings-pin-confirm" class="input" placeholder="Re-enter..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;text-security:disc;padding:6px 10px;font-size:0.85rem;">
+                <input type="text" id="settings-pin-confirm" class="input" placeholder="Re-enter..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;padding:6px 10px;font-size:0.85rem;">
               </div>
               <div style="display:flex;gap:6px;">
                 <button id="pin-submit-btn" class="btn btn--small btn--primary">CONFIRM</button>
@@ -396,11 +396,11 @@
               <div id="delete-confirm-form" style="display:none;margin-top:16px;padding-top:16px;border-top:var(--border-muted);">
                 <div class="input-group" style="margin-bottom:8px;">
                   <label for="delete-seed-input">Seed Phrase</label>
-                  <textarea id="delete-seed-input" class="input" rows="2" placeholder="Enter your 24-word seed phrase..." style="-webkit-text-security:disc;text-security:disc;font-size:0.85rem;min-height:60px;"></textarea>
+                  <textarea id="delete-seed-input" class="input" rows="2" placeholder="Enter your 24-word seed phrase..." style="-webkit-text-security:disc;font-size:0.85rem;min-height:60px;"></textarea>
                 </div>
                 <div class="input-group" id="delete-pin-group" style="display:none;margin-bottom:8px;">
                   <label for="delete-pin-input">PIN</label>
-                  <input type="text" id="delete-pin-input" class="input" placeholder="Enter PIN..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;text-security:disc;">
+                  <input type="text" id="delete-pin-input" class="input" placeholder="Enter PIN..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;">
                 </div>
                 <div class="input-group" id="delete-totp-group" style="display:none;margin-bottom:8px;">
                   <label for="delete-totp-input">Authenticator Code</label>

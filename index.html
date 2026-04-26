@@ -286,10 +286,10 @@
             <h2 class="settings-card__title">Security</h2>
 
             <!-- PIN row -->
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:var(--border-muted);">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:0.85rem;font-weight:500;">PIN</span>
-                <span id="pin-status-text" style="font-size:0.7rem;color:var(--color-text-muted);">Disabled</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:var(--border-muted);">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span style="font-size:0.95rem;font-weight:500;">PIN</span>
+                <span id="pin-status-text" style="font-size:0.75rem;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.1em;">Disabled</span>
               </div>
               <div>
                 <button id="pin-enable-btn" class="btn btn--small btn--primary">ENABLE</button>
@@ -298,27 +298,27 @@
             </div>
 
             <!-- PIN setup form (hidden) -->
-            <div id="pin-setup-form" style="display:none;padding:8px 0;border-bottom:var(--border-muted);">
-              <div style="font-size:0.8rem;font-weight:500;margin-bottom:8px;" id="pin-form-title">Set your PIN</div>
-              <div class="input-group" style="margin-bottom:6px;">
+            <div id="pin-setup-form" style="display:none;padding:14px 0;border-bottom:var(--border-muted);">
+              <div style="font-size:0.95rem;font-weight:500;margin-bottom:12px;" id="pin-form-title">Set your PIN</div>
+              <div class="input-group" style="margin-bottom:12px;">
                 <label for="settings-pin-input">PIN (4-6 chars)</label>
-                <input type="text" id="settings-pin-input" class="input" placeholder="PIN..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;padding:6px 10px;font-size:0.85rem;">
+                <input type="text" id="settings-pin-input" class="input" placeholder="PIN..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;">
               </div>
-              <div class="input-group" style="margin-bottom:6px;" id="pin-confirm-group">
+              <div class="input-group" style="margin-bottom:12px;" id="pin-confirm-group">
                 <label for="settings-pin-confirm">Confirm</label>
-                <input type="text" id="settings-pin-confirm" class="input" placeholder="Re-enter..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;padding:6px 10px;font-size:0.85rem;">
+                <input type="text" id="settings-pin-confirm" class="input" placeholder="Re-enter..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;">
               </div>
-              <div style="display:flex;gap:6px;">
+              <div style="display:flex;gap:8px;">
                 <button id="pin-submit-btn" class="btn btn--small btn--primary">CONFIRM</button>
                 <button id="pin-cancel-btn" class="btn btn--small">CANCEL</button>
               </div>
             </div>
 
             <!-- 2FA row -->
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:var(--border-muted);">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:0.85rem;font-weight:500;">2FA</span>
-                <span id="totp-status-text" style="font-size:0.7rem;color:var(--color-text-muted);">Disabled</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:var(--border-muted);">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span style="font-size:0.95rem;font-weight:500;">2FA</span>
+                <span id="totp-status-text" style="font-size:0.75rem;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.1em;">Disabled</span>
               </div>
               <div>
                 <button id="totp-enable-btn" class="btn btn--small btn--primary">ENABLE</button>
@@ -327,10 +327,10 @@
             </div>
 
             <!-- Regen seed row -->
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:0.85rem;font-weight:500;">Seed Phrase</span>
-                <span id="regen-seed-status" style="font-size:0.7rem;"></span>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span style="font-size:0.95rem;font-weight:500;">Seed Phrase</span>
+                <span id="regen-seed-status" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;"></span>
               </div>
               <button id="regen-seed-btn" class="btn btn--small" disabled>REGENERATE</button>
             </div>
@@ -341,21 +341,21 @@
         <div class="settings-sub" id="settings-appearance-section">
           <div class="card settings-card">
             <h2 class="settings-card__title">Appearance</h2>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:var(--border-muted);">
-              <span style="font-size:0.85rem;">Light Mode</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:var(--border-muted);gap:16px;">
+              <span style="font-size:0.95rem;font-weight:500;">Light Mode</span>
               <div class="toggle" id="settings-theme-toggle"><div class="toggle__knob"></div></div>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:var(--border-muted);">
-              <span style="font-size:0.85rem;">Header Font</span>
-              <input type="text" id="settings-header-font" class="input" placeholder="EB Garamond" style="width:150px;padding:6px 10px;font-size:0.8rem;" autocomplete="off">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:var(--border-muted);gap:16px;">
+              <span style="font-size:0.95rem;font-weight:500;">Header Font</span>
+              <input type="text" id="settings-header-font" class="input" placeholder="EB Garamond" style="width:200px;" autocomplete="off">
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:var(--border-muted);">
-              <span style="font-size:0.85rem;">Body Font</span>
-              <input type="text" id="settings-body-font" class="input" placeholder="DM Sans" style="width:150px;padding:6px 10px;font-size:0.8rem;" autocomplete="off">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:var(--border-muted);gap:16px;">
+              <span style="font-size:0.95rem;font-weight:500;">Body Font</span>
+              <input type="text" id="settings-body-font" class="input" placeholder="DM Sans" style="width:200px;" autocomplete="off">
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
-              <span style="font-size:0.85rem;">Auto-Lock</span>
-              <select id="settings-autolock" class="input" style="width:100px;padding:6px 10px;font-size:0.8rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;gap:16px;">
+              <span style="font-size:0.95rem;font-weight:500;">Auto-Lock</span>
+              <select id="settings-autolock" class="input" style="width:140px;">
                 <option value="300000" selected>5 min</option>
                 <option value="600000">10 min</option>
                 <option value="1200000">20 min</option>
@@ -383,26 +383,26 @@
         <div class="settings-sub" id="settings-danger-section">
           <div class="card settings-card">
             <h2 class="settings-card__title">Danger Zone</h2>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:var(--border-muted);">
-              <div><span style="font-size:0.85rem;font-weight:500;">Wipe Data</span><div style="font-size:0.65rem;color:var(--color-text-muted);">Clears chats, resets name. Account stays.</div></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:var(--border-muted);gap:16px;">
+              <div><span style="font-size:0.95rem;font-weight:500;">Wipe Data</span><div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:2px;">Clears chats, resets name. Account stays.</div></div>
               <button id="settings-wipe-data" class="btn btn--small btn--danger">WIPE</button>
             </div>
-            <div style="padding:6px 0;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <div><span style="font-size:0.85rem;font-weight:500;">Delete Account</span><div style="font-size:0.65rem;color:var(--color-text-muted);">Requires seed phrase + PIN/2FA.</div></div>
+            <div style="padding:14px 0;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;">
+                <div><span style="font-size:0.95rem;font-weight:500;">Delete Account</span><div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:2px;">Requires seed phrase + PIN/2FA.</div></div>
                 <button id="settings-delete-account" class="btn btn--small btn--danger">DELETE</button>
               </div>
               <!-- Delete confirmation form (hidden) -->
               <div id="delete-confirm-form" style="display:none;margin-top:16px;padding-top:16px;border-top:var(--border-muted);">
-                <div class="input-group" style="margin-bottom:8px;">
+                <div class="input-group" style="margin-bottom:12px;">
                   <label for="delete-seed-input">Seed Phrase</label>
-                  <textarea id="delete-seed-input" class="input" rows="2" placeholder="Enter your 24-word seed phrase..." style="-webkit-text-security:disc;font-size:0.85rem;min-height:60px;"></textarea>
+                  <textarea id="delete-seed-input" class="input" rows="2" placeholder="Enter your 24-word seed phrase..." style="-webkit-text-security:disc;min-height:80px;"></textarea>
                 </div>
-                <div class="input-group" id="delete-pin-group" style="display:none;margin-bottom:8px;">
+                <div class="input-group" id="delete-pin-group" style="display:none;margin-bottom:12px;">
                   <label for="delete-pin-input">PIN</label>
                   <input type="text" id="delete-pin-input" class="input" placeholder="Enter PIN..." autocomplete="off" maxlength="6" style="-webkit-text-security:disc;">
                 </div>
-                <div class="input-group" id="delete-totp-group" style="display:none;margin-bottom:8px;">
+                <div class="input-group" id="delete-totp-group" style="display:none;margin-bottom:12px;">
                   <label for="delete-totp-input">Authenticator Code</label>
                   <input type="text" id="delete-totp-input" class="input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="off" style="letter-spacing:0.3em;text-align:center;">
                 </div>

@@ -1125,9 +1125,34 @@ initDB().then(async () => {
     } catch(e) {}
   }, 60000);
 
+  // Heartbeat: every 30s send a protocol-level ping to each open socket.
+  // If the previous round never came back as a pong, the peer is gone —
+  // terminate the socket so we stop holding zombie connections, calling
+  // ws.send into the void, and waiting on OS-level TCP timeouts.
+  const HEARTBEAT_MS = 30000;
+  const cleanupSubscriptions = (ws) => {
+    for (const convId of ws._convIds || []) {
+      const set = wsClients.get(convId);
+      if (set) { set.delete(ws); if (set.size === 0) wsClients.delete(convId); }
+    }
+  };
+  const heartbeat = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (ws._isAlive === false) {
+        cleanupSubscriptions(ws);
+        return ws.terminate();
+      }
+      ws._isAlive = false;
+      try { ws.ping(); } catch (e) {}
+    });
+  }, HEARTBEAT_MS);
+  wss.on('close', () => clearInterval(heartbeat));
+
   wss.on('connection', (ws) => {
     ws._userId = null;
     ws._convIds = new Set();
+    ws._isAlive = true;
+    ws.on('pong', () => { ws._isAlive = true; });
 
     ws.on('message', (data) => {
       try {
@@ -1139,6 +1164,12 @@ initDB().then(async () => {
             wsTokens.delete(msg.token);
             ws.send(JSON.stringify({ type: 'auth_ok' }));
           }
+          return;
+        }
+        if (msg.type === 'ping') {
+          ws._isAlive = true;
+          ws.send(JSON.stringify({ type: 'pong' }));
+          return;
         }
         if (msg.type === 'subscribe' && ws._userId && msg.conversation_id) {
           ws._convIds.add(msg.conversation_id);
@@ -1149,10 +1180,7 @@ initDB().then(async () => {
     });
 
     ws.on('close', () => {
-      for (const convId of ws._convIds) {
-        const set = wsClients.get(convId);
-        if (set) { set.delete(ws); if (set.size === 0) wsClients.delete(convId); }
-      }
+      cleanupSubscriptions(ws);
     });
   });
 }).catch(err => {

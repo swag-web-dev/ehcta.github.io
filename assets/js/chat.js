@@ -279,6 +279,10 @@ const Chat = {
   _activeTab: 'messages',
   _ws: null,
   _wsReconnectTimer: null,
+  _wsPingTimer: null,
+  _wsPongWatchdog: null,
+  _wsLastPongAt: 0,
+  _wsClosedByUs: false,
   _loadingOlder: false,
 
   async init() {
@@ -827,19 +831,60 @@ const Chat = {
   },
 
   // ── WEBSOCKET ──
+  // Heartbeat parameters. Send an app-level {type:'ping'} every PING_MS;
+  // if no {type:'pong'} comes back within PONG_TIMEOUT_MS the socket is
+  // assumed dead and force-closed (which triggers the reconnect path).
+  // Browser WS API doesn't expose protocol pings, but the browser auto-
+  // replies to the server's protocol ping at the WS layer too — so this
+  // app-level ping is the channel we can actually observe failures on.
+  _WS_PING_MS: 25000,
+  _WS_PONG_TIMEOUT_MS: 60000,
+  _WS_WATCHDOG_MS: 5000,
+
+  _stopHeartbeat() {
+    if (this._wsPingTimer) { clearInterval(this._wsPingTimer); this._wsPingTimer = null; }
+    if (this._wsPongWatchdog) { clearInterval(this._wsPongWatchdog); this._wsPongWatchdog = null; }
+  },
+
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    this._wsLastPongAt = Date.now();
+    this._wsPingTimer = setInterval(() => {
+      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+        try { this._ws.send(JSON.stringify({ type: 'ping' })); } catch (e) {}
+      }
+    }, this._WS_PING_MS);
+    this._wsPongWatchdog = setInterval(() => {
+      if (!this._ws) return;
+      if (Date.now() - this._wsLastPongAt > this._WS_PONG_TIMEOUT_MS) {
+        // No pong in too long — connection is wedged. Force-close so the
+        // onclose handler reconnects from scratch.
+        try { this._ws.close(); } catch (e) {}
+        this._stopHeartbeat();
+      }
+    }, this._WS_WATCHDOG_MS);
+  },
+
   async _connectWS() {
     if (this._ws && this._ws.readyState === WebSocket.OPEN) return;
+    this._wsClosedByUs = false;
     try {
       const { token } = await API.post('api/ws/token', {});
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       this._ws = new WebSocket(proto + '//' + location.host);
       this._ws.onopen = () => {
         this._ws.send(JSON.stringify({ type: 'auth', token }));
+        this._startHeartbeat();
       };
       this._ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
+          if (msg.type === 'pong') {
+            this._wsLastPongAt = Date.now();
+            return;
+          }
           if (msg.type === 'auth_ok') {
+            this._wsLastPongAt = Date.now();
             if (this._activeConvId) {
               this._subscribeConversation(this._activeConvId);
             }
@@ -854,8 +899,11 @@ const Chat = {
       };
       this._ws.onclose = () => {
         this._ws = null;
+        this._stopHeartbeat();
         clearTimeout(this._wsReconnectTimer);
-        this._wsReconnectTimer = setTimeout(() => this._connectWS(), 3000);
+        if (!this._wsClosedByUs) {
+          this._wsReconnectTimer = setTimeout(() => this._connectWS(), 3000);
+        }
       };
       this._ws.onerror = () => {};
     } catch(e) {}
@@ -1822,6 +1870,14 @@ const Chat = {
 
   destroy() {
     this._stopPolling();
+    this._stopHeartbeat();
+    this._wsClosedByUs = true;
+    clearTimeout(this._wsReconnectTimer);
+    this._wsReconnectTimer = null;
+    if (this._ws) {
+      try { this._ws.close(); } catch (e) {}
+      this._ws = null;
+    }
     this._conversations = [];
     this._messages = {};
     this._activeConvId = null;

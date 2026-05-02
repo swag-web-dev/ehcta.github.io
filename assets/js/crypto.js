@@ -155,7 +155,9 @@ const Crypto = {
     this._chatPrivateKey = await window.crypto.subtle.importKey('jwk', privJwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['decrypt']);
   },
 
-  // v1 encryption (proven, simple)
+  // Wire format: base64( wk(512 bytes RSA-OAEP-4096 ciphertext) || iv(12) || ct(rest) ).
+  // No JSON, no field labels — bytes are indistinguishable from random to a
+  // structure-detection tool. RSA-4096 ciphertext is always exactly 512 bytes.
   async encryptForChat(plaintext, recipientPubKeyJson) {
     const pubJwk = JSON.parse(recipientPubKeyJson);
     const pubKey = await window.crypto.subtle.importKey('jwk', pubJwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
@@ -166,21 +168,42 @@ const Crypto = {
     const rawAes = await window.crypto.subtle.exportKey('raw', aesKey);
     const wrappedKey = await window.crypto.subtle.encrypt({ name: 'RSA-OAEP' }, pubKey, rawAes);
 
-    return btoa(JSON.stringify({
-      wk: this._bytesToBase64(new Uint8Array(wrappedKey)),
-      iv: this._bytesToBase64(iv),
-      ct: this._bytesToBase64(new Uint8Array(ct)),
-    }));
+    const wk = new Uint8Array(wrappedKey);
+    const ctBytes = new Uint8Array(ct);
+    const out = new Uint8Array(wk.length + iv.length + ctBytes.length);
+    out.set(wk, 0);
+    out.set(iv, wk.length);
+    out.set(ctBytes, wk.length + iv.length);
+    return this._bytesToBase64(out);
   },
 
   async decryptChatMessage(ciphertextB64) {
     if (!this._chatPrivateKey) throw new Error('Chat private key not loaded');
-    const payload = JSON.parse(atob(ciphertextB64));
-    const wrappedKey = this._base64ToBytes(payload.wk);
+    const blob = this._base64ToBytes(ciphertextB64);
+
+    // Auto-detect the legacy {wk, iv, ct} JSON format so messages encrypted
+    // before the binary format change still decrypt.
+    let legacy = null;
+    try {
+      const candidate = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(blob));
+      if (candidate && typeof candidate.wk === 'string' && typeof candidate.iv === 'string' && typeof candidate.ct === 'string') {
+        legacy = candidate;
+      }
+    } catch (e) {}
+
+    let wrappedKey, iv, ct;
+    if (legacy) {
+      wrappedKey = this._base64ToBytes(legacy.wk);
+      iv = this._base64ToBytes(legacy.iv);
+      ct = this._base64ToBytes(legacy.ct);
+    } else {
+      wrappedKey = blob.slice(0, 512);
+      iv = blob.slice(512, 524);
+      ct = blob.slice(524);
+    }
+
     const rawAes = await window.crypto.subtle.decrypt({ name: 'RSA-OAEP' }, this._chatPrivateKey, wrappedKey);
     const aesKey = await window.crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt']);
-    const iv = this._base64ToBytes(payload.iv);
-    const ct = this._base64ToBytes(payload.ct);
     const pt = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ct);
     return new TextDecoder().decode(pt);
   },

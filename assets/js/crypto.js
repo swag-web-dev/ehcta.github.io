@@ -9,40 +9,36 @@ const Crypto = {
   async init(seedPhrase, salt) {
     this._salt = salt;
     await this._deriveAllKeys(seedPhrase, salt);
-    // Store derived key in sessionStorage for session restore
-    const rawKey = await window.crypto.subtle.exportKey('raw', this._keys['aes-256-gcm']);
-    sessionStorage.setItem('_dk', this._bytesToBase64(new Uint8Array(rawKey)));
-    sessionStorage.setItem('_salt', salt);
+    // Persist the non-extractable CryptoKey handle (not the raw bytes) to
+    // IndexedDB so a tab refresh can resume without re-entering the seed
+    // phrase. The raw key never leaves WebCrypto.
+    try { await this._saveVault(this._keys['aes-256-gcm'], salt); } catch (e) {}
   },
 
   async restore() {
-    const dk = sessionStorage.getItem('_dk');
-    const salt = sessionStorage.getItem('_salt');
-    if (dk && salt) {
-      try {
-        const rawKey = this._base64ToBytes(dk);
-        this._keys['aes-256-gcm'] = await window.crypto.subtle.importKey(
-          'raw', rawKey, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
-        );
-        this._keys[256] = this._keys['aes-256-gcm'];
-        this._salt = salt;
-        this._saltBytes = this._hexToBytes(salt);
-        return true;
-      } catch(e) {
-        return false;
-      }
+    try {
+      const stored = await this._loadVault();
+      if (!stored || !stored.key || !stored.salt) return false;
+      this._keys['aes-256-gcm'] = stored.key;
+      this._keys[256] = stored.key;
+      this._salt = stored.salt;
+      this._saltBytes = this._hexToBytes(stored.salt);
+      return true;
+    } catch (e) {
+      return false;
     }
-    return false;
   },
 
-  clear() {
+  async clear() {
     this._keys = {};
     this._salt = null;
     this._keyMaterial = null;
     this._chatPrivateKey = null;
     this._chainStates = {};
+    // Wipe legacy sessionStorage entries from prior versions of this app
     sessionStorage.removeItem('_dk');
     sessionStorage.removeItem('_salt');
+    await this._clearVault();
   },
 
   async _deriveAllKeys(seedPhrase, salt) {
@@ -52,13 +48,62 @@ const Crypto = {
     );
     this._saltBytes = this._hexToBytes(salt);
 
+    // extractable=false: the raw key bytes can never be read back out via
+    // exportKey, so they cannot leak through console, sessionStorage, XSS, etc.
     this._keys['aes-256-gcm'] = await window.crypto.subtle.deriveKey(
       { name: 'PBKDF2', salt: this._saltBytes, iterations: 600000, hash: 'SHA-256' },
       this._keyMaterial,
-      { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
+      { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
     );
 
     this._keys[256] = this._keys['aes-256-gcm'];
+  },
+
+  // ══ INDEXEDDB VAULT (CryptoKey handle storage) ══
+
+  _openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('ehcta_vault', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('keys');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async _saveVault(key, salt) {
+    const db = await this._openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('keys', 'readwrite');
+      tx.objectStore('keys').put({ key, salt }, 'vault');
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  },
+
+  async _loadVault() {
+    const db = await this._openDb();
+    const result = await new Promise((resolve, reject) => {
+      const tx = db.transaction('keys', 'readonly');
+      const req = tx.objectStore('keys').get('vault');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return result;
+  },
+
+  async _clearVault() {
+    try {
+      const db = await this._openDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('keys', 'readwrite');
+        tx.objectStore('keys').delete('vault');
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch (e) {}
   },
 
   // ══ MESSAGE CHAIN STATE ══

@@ -65,7 +65,7 @@ const App = {
     document.getElementById('logout-btn').addEventListener('click', async () => {
       try { await API.post('api/auth/logout', {}); } catch(e) {}
       Chat.destroy();
-      Crypto.clear();
+      await Crypto.clear();
       sessionStorage.clear();
       window.location.reload();
     });
@@ -174,9 +174,9 @@ function resetInactivity() {
   clearTimeout(inactivityTimer);
   const timeout = parseInt(localStorage.getItem('ehcta-autolock') || '300000');
   if (timeout === 0) return;
-  inactivityTimer = setTimeout(() => {
+  inactivityTimer = setTimeout(async () => {
     if (document.getElementById('app-view').style.display !== 'none') {
-      Crypto.clear();
+      await Crypto.clear();
       sessionStorage.clear();
       Toast.show('Session locked due to inactivity');
       window.location.reload();

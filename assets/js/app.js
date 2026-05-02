@@ -82,8 +82,8 @@ const App = {
       });
     });
 
-    try { Settings.init(); } catch(e) { console.error('Settings init error:', e); }
-    try { Chat.init(); } catch(e) { console.error('Chat init error:', e); }
+    try { Settings.init(); } catch(e) {}
+    try { Chat.init(); } catch(e) {}
 
     // Open chat on load
     if (window.location.hash === '#chat') {

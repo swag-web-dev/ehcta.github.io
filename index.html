@@ -5,6 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EHCTA</title>
 
+  <!-- Silence the browser console: nothing this app or its libs do should
+       leak through DevTools. Runs before every other <script> in the page. -->
+  <script>
+    (function () {
+      var noop = function () {};
+      var methods = ['log','info','warn','error','debug','trace','dir','dirxml',
+                     'group','groupCollapsed','groupEnd','table','time','timeEnd',
+                     'timeLog','count','countReset','assert','profile','profileEnd'];
+      try {
+        for (var i = 0; i < methods.length; i++) {
+          try { Object.defineProperty(console, methods[i], { value: noop, writable: false, configurable: false }); }
+          catch (e) { console[methods[i]] = noop; }
+        }
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

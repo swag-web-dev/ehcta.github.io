@@ -301,7 +301,7 @@ const Chat = {
         this._myPublicKey = kp.publicKey;
         Crypto._chatPrivateKey = kp._privateKey;
       }
-    } catch (e) { console.error('Chat init error:', e); }
+    } catch (e) {}
 
     // Search
     const searchInput = document.getElementById('chat-search');
@@ -454,9 +454,7 @@ const Chat = {
     const searchInput = document.getElementById('chat-search');
     if (searchInput) searchInput.value = '';
     try {
-      console.log('[DEBUG] startConversation called with:', uniqueId);
       const data = await API.post('api/chat/conversations/start', { unique_id: uniqueId });
-      console.log('[DEBUG] startConversation response:', JSON.stringify(data));
       this._activeConvId = data.conversation_id;
       this._activeConvMeta = {
         id: data.conversation_id, otherPublicKey: data.other_public_key,
@@ -484,7 +482,7 @@ const Chat = {
       for (const c of this._conversations) {
         if (c.status === 'accepted') this._subscribeConversation(c.id);
       }
-    } catch (e) { console.error('Failed to load conversations:', e); }
+    } catch (e) {}
   },
 
   // ── MESSAGES ──
@@ -507,7 +505,7 @@ const Chat = {
       }
       this._messages[convId] = newMessages;
       this.renderMessages(convId);
-    } catch (e) { console.error('Failed to load messages:', e); }
+    } catch (e) {}
   },
 
   async _decryptMyMessage(msg) {

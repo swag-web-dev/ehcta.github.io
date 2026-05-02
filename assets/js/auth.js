@@ -57,7 +57,6 @@ const Auth = {
             seedModal.classList.add('modal-overlay--hidden');
             App.showApp();
           } catch (e) {
-            console.error('Init failed:', e);
             seedContinueBtn.disabled = false;
             seedContinueBtn.textContent = 'I HAVE SAVED MY PHRASE';
             Toast.show('Failed to initialize: ' + e.message, true);

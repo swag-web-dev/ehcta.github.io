@@ -75,7 +75,7 @@ function _fpLoad(name) {
 class FontPicker {
   constructor(inputId, onChange, defaultFont) {
     this.el = document.getElementById(inputId);
-    if (!this.el) { console.warn('FontPicker: input not found:', inputId); return; }
+    if (!this.el) return;
     this.cb = onChange || function(){};
     this.def = defaultFont || '';
     this.all = FONT_PICKER_FONTS;

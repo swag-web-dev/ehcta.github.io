@@ -296,7 +296,19 @@ const Chat = {
       const keys = await API.get('api/chat/keys/get');
       if (keys.chat_public_key && keys.chat_private_key_enc && keys.chat_private_key_iv) {
         this._myPublicKey = keys.chat_public_key;
-        await Crypto.loadChatPrivateKey(keys.chat_private_key_enc, keys.chat_private_key_iv);
+        try {
+          await Crypto.loadChatPrivateKey(keys.chat_private_key_enc, keys.chat_private_key_iv);
+        } catch (loadErr) {
+          // Failure here means our vault key cannot decrypt the stored chat
+          // private blob — usually because the seed/salt no longer matches
+          // (server tampering, account confusion, or a botched regen-seed).
+          // Crucially: do NOT silently regenerate the keypair. That would
+          // overwrite the server-stored blob and make every past message
+          // permanently undecryptable. Surface a hard error instead.
+          this._keyLoadFailed = true;
+          Toast.show('Chat key could not be unlocked. Past messages may be inaccessible. Do not regenerate keys until you have verified your seed phrase.', true);
+          return;
+        }
       } else {
         const kp = await Crypto.generateChatKeyPair();
         await API.post('api/chat/keys/save', {
@@ -463,7 +475,18 @@ const Chat = {
       this._activeConvMeta = {
         id: data.conversation_id, otherPublicKey: data.other_public_key,
         myPublicKey: data.my_public_key, user1_id: data.user1_id, user2_id: data.user2_id,
+        peerUid: uniqueId,
       };
+      // TOFU pin the peer's public key. If it ever changes, lock the
+      // conversation behind a "verify fingerprint" warning so users have a
+      // chance to detect a server-mediated key swap (MITM).
+      if (data.other_public_key) {
+        const status = await Crypto.pinCheckPeer(uniqueId, data.other_public_key);
+        this._activeConvMeta.pinStatus = status;
+        if (status === 'changed') {
+          Toast.show("This person's encryption key has changed. Verify their fingerprint before sending — open the verify dialog.", true);
+        }
+      }
       // Show UI immediately, load data in parallel
       this._shouldScrollBottom = true;
       this._showInputArea(true);
@@ -475,6 +498,14 @@ const Chat = {
         this._markRead(data.conversation_id),
       ]);
     } catch (e) { Toast.show(e.message || 'Failed to start conversation', true); }
+  },
+
+  async acceptKeyChange() {
+    const meta = this._activeConvMeta;
+    if (!meta || !meta.peerUid || !meta.otherPublicKey) return;
+    await Crypto.pinAcceptPeer(meta.peerUid, meta.otherPublicKey);
+    meta.pinStatus = 'match';
+    Toast.show('New key trusted.');
   },
 
   async loadConversations() {
@@ -522,6 +553,17 @@ const Chat = {
 
   async _decryptAttachment(msg) {
     if (!msg.attachment) return '';
+    // New format: opaque binary envelope.
+    const unpacked = Crypto.unpackAttachmentEnvelope(msg.attachment);
+    if (unpacked) {
+      const [ct1, ct2] = unpacked;
+      try { return await Crypto.decryptChatMessage(ct1); }
+      catch (e1) {
+        try { return await Crypto.decryptChatMessage(ct2); }
+        catch (e2) { return ''; }
+      }
+    }
+    // Legacy JSON wrapper fallback.
     try {
       const parsed = JSON.parse(msg.attachment);
       if (parsed.att_ct1 && parsed.att_ct2) {
@@ -560,6 +602,10 @@ const Chat = {
     const meta = this._activeConvMeta;
     if (!meta.otherPublicKey || !this._myPublicKey) {
       Toast.show('Chat keys not ready', true); return;
+    }
+    if (meta.pinStatus === 'changed') {
+      Toast.show("This person's key changed. Verify the fingerprint before sending.", true);
+      return;
     }
 
     this._sending = true;
@@ -600,12 +646,13 @@ const Chat = {
       const ciphertext_user1 = await Crypto.encryptForChat(msgContent, user1PubKey);
       const ciphertext_user2 = await Crypto.encryptForChat(msgContent, user2PubKey);
 
-      // Encrypt attachment if present
+      // Encrypt attachment if present. Wire format is now an opaque binary
+      // envelope rather than {"att_ct1":"...","att_ct2":"..."} JSON.
       let encAttachment = '';
       if (attachment) {
         const att_ct1 = await Crypto.encryptForChat(attachment, user1PubKey);
         const att_ct2 = await Crypto.encryptForChat(attachment, user2PubKey);
-        encAttachment = JSON.stringify({ att_ct1, att_ct2 });
+        encAttachment = Crypto.packAttachmentEnvelope(att_ct1, att_ct2);
       }
 
       // Include conversation TTL if set
@@ -918,21 +965,38 @@ const Chat = {
   // ── KEY FINGERPRINT VERIFICATION ──
   async showFingerprint() {
     if (!this._activeConvMeta || !this._myPublicKey) return;
-    const myFp = await Crypto.getKeyFingerprint(this._myPublicKey);
-    const theirFp = await Crypto.getKeyFingerprint(this._activeConvMeta.otherPublicKey);
+    let myFp, theirFp;
+    try {
+      myFp = await Crypto.getKeyFingerprint(this._myPublicKey);
+      theirFp = await Crypto.getKeyFingerprint(this._activeConvMeta.otherPublicKey);
+    } catch (e) {
+      Toast.show('Could not compute key fingerprint: ' + e.message, true);
+      return;
+    }
     const conv = this._conversations.find(c => c.id === this._activeConvId);
     const theirName = conv ? conv.other_user_name : 'Other';
+    const pinStatus = this._activeConvMeta.pinStatus || 'unknown';
 
-    // Show fingerprint overlay
+    let banner = '';
+    let trustBtn = '';
+    if (pinStatus === 'changed') {
+      banner = '<div style="background:#3a1414;border:1px solid #ff6b6b;padding:10px 12px;margin-bottom:14px;font-size:0.75rem;line-height:1.4;">⚠ This contact\'s key has changed since you last messaged. If the new fingerprint above does NOT match what ' + this._esc(theirName) + ' tells you, someone may be intercepting messages. Do not trust until verified.</div>';
+      trustBtn = '<button class="btn btn--small" onclick="Chat.acceptKeyChange();this.closest(\'div[style]\').parentElement.remove()" style="margin-right:8px;">TRUST NEW KEY</button>';
+    } else if (pinStatus === 'first-use') {
+      banner = '<div style="background:#1a2a1a;border:1px solid #5fb55f;padding:10px 12px;margin-bottom:14px;font-size:0.75rem;line-height:1.4;">First time messaging this contact. Compare fingerprints in person or over a trusted channel — once verified, future key changes will be flagged.</div>';
+    }
+
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;';
-    overlay.innerHTML = '<div style="background:var(--color-bg,#000);border:var(--border,1px solid #fff);padding:32px;max-width:420px;width:90%;">' +
+    overlay.innerHTML = '<div style="background:var(--color-bg,#000);border:var(--border,1px solid #fff);padding:32px;max-width:480px;width:90%;">' +
       '<h3 style="font-family:var(--font-title);font-size:1.1rem;margin-bottom:16px;">Key Fingerprints</h3>' +
+      banner +
       '<p style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:16px;">Compare these numbers with ' + this._esc(theirName) + ' in person or over a trusted channel to verify end-to-end encryption.</p>' +
       '<div style="margin-bottom:16px;"><div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);margin-bottom:4px;">Your key</div>' +
-      '<code style="font-size:0.9rem;letter-spacing:0.15em;word-break:break-all;">' + this._esc(myFp) + '</code></div>' +
-      '<div style="margin-bottom:20px;"><div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);margin-bottom:4px;">' + this._esc(theirName) + '\'s key</div>' +
-      '<code style="font-size:0.9rem;letter-spacing:0.15em;word-break:break-all;">' + this._esc(theirFp) + '</code></div>' +
+      '<code style="font-size:0.85rem;letter-spacing:0.1em;word-break:break-all;">' + this._esc(myFp) + '</code></div>' +
+      '<div style="margin-bottom:20px;"><div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);margin-bottom:4px;">' + this._esc(theirName) + '&#39;s key</div>' +
+      '<code style="font-size:0.85rem;letter-spacing:0.1em;word-break:break-all;">' + this._esc(theirFp) + '</code></div>' +
+      trustBtn +
       '<button class="btn btn--small" onclick="this.closest(\'div[style]\').parentElement.remove()">CLOSE</button>' +
       '</div>';
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });

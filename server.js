@@ -334,7 +334,12 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/logout', (req, res) => { req.session.destroy(() => ok(res)); });
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('connect.sid');
+    ok(res);
+  });
+});
 
 app.post('/api/auth/check', async (req, res) => {
   try {

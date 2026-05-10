@@ -1254,10 +1254,16 @@ const Chat = {
         try {
           const files = JSON.parse(attachData);
           for (const f of files) {
-            if (f.type && f.type.startsWith('image/')) {
-              attachHtml += `<div class="chat-msg__attachment"><img src="${this._esc(f.data)}" alt="${this._esc(f.name)}" onclick="Chat._openLightbox(this.src)"></div>`;
+            const isImg = !!(f.type && f.type.startsWith('image/'));
+            const safeUrl = this._safeAttachmentUrl(f.data, f.type, isImg);
+            if (!safeUrl) {
+              attachHtml += `<div class="chat-msg__attachment chat-msg__attachment--blocked">[blocked attachment: ${this._esc(f.name || 'unknown')}]</div>`;
+              continue;
+            }
+            if (isImg) {
+              attachHtml += `<div class="chat-msg__attachment"><img src="${this._esc(safeUrl)}" alt="${this._esc(f.name)}" onclick="Chat._openLightbox(this.src)"></div>`;
             } else {
-              attachHtml += `<div class="chat-msg__attachment"><a href="${this._esc(f.data)}" download="${this._esc(f.name)}">${this._esc(f.name)} (${this._formatSize(f.size)})</a></div>`;
+              attachHtml += `<div class="chat-msg__attachment"><a href="${this._esc(safeUrl)}" download="${this._esc(f.name)}">${this._esc(f.name)} (${this._formatSize(f.size)})</a></div>`;
             }
           }
         } catch (e) {}
@@ -1317,7 +1323,33 @@ const Chat = {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   },
 
-  _esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; },
+  // Real HTML+attribute escape — safe inside both text nodes and "..." / '...' attributes.
+  // The previous textContent-based version did not escape ' or " which made every inline
+  // onclick="...('${_esc(id)}')" injectable when the value contained those characters.
+  _esc(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
+  // Attachment URL allowlist. Peer-controlled data flows here; without this, a hostile
+  // peer can supply data:text/html, image/svg+xml (with <script>), or remote http URLs
+  // that turn the chat client into a tracking-pixel / malware-delivery surface.
+  _safeAttachmentUrl(url, declaredType, isImage) {
+    if (typeof url !== 'string' || !url.startsWith('data:')) return null;
+    const m = url.match(/^data:([^;,]+)/);
+    if (!m) return null;
+    const realType = m[1].toLowerCase();
+    const SAFE_IMG = new Set(['image/png','image/jpeg','image/jpg','image/gif','image/webp']);
+    const FORBIDDEN = new Set(['text/html','application/xhtml+xml','image/svg+xml','application/javascript','text/javascript','application/ecmascript']);
+    if (isImage) return SAFE_IMG.has(realType) ? url : null;
+    if (FORBIDDEN.has(realType)) return null;
+    if (declaredType && typeof declaredType === 'string' && declaredType.toLowerCase() !== realType) return null;
+    return url;
+  },
 
   // ── EDIT/UNSEND ──
   async unsendMessage(msgId) {
@@ -1592,8 +1624,10 @@ const Chat = {
           const files = JSON.parse(att);
           for (const f of files) {
             if (f.type && f.type.startsWith('image/')) {
+              const safeUrl = this._safeAttachmentUrl(f.data, f.type, true);
+              if (!safeUrl) continue;
               const sender = this._esc(this._msgSender(m));
-              items += `<div style="overflow:hidden;border:var(--border-muted);cursor:pointer;" onclick="Chat._openLightbox(this.querySelector('img').src)"><img src="${this._esc(f.data)}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block;" alt="${this._esc(f.name)}"><div style="padding:4px 6px;font-size:0.6rem;color:var(--color-text-muted);background:var(--color-surface,#0a0a0a);">${sender}</div></div>`;
+              items += `<div style="overflow:hidden;border:var(--border-muted);cursor:pointer;" onclick="Chat._openLightbox(this.querySelector('img').src)"><img src="${this._esc(safeUrl)}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block;" alt="${this._esc(f.name)}"><div style="padding:4px 6px;font-size:0.6rem;color:var(--color-text-muted);background:var(--color-surface,#0a0a0a);">${sender}</div></div>`;
             }
           }
         } catch(e) {}
@@ -1609,7 +1643,9 @@ const Chat = {
           const files = JSON.parse(att);
           for (const f of files) {
             if (!f.type || !f.type.startsWith('image/')) {
-              html += `<div style="padding:10px 0;border-bottom:var(--border-muted);">${senderMeta(m)}<div style="display:flex;justify-content:space-between;align-items:center;"><div style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${this._esc(f.name)}</div><a href="${this._esc(f.data)}" download="${this._esc(f.name)}" style="color:var(--color-text-muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;text-decoration:none;flex-shrink:0;margin-left:12px;">${this._formatSize(f.size)}</a></div></div>`;
+              const safeUrl = this._safeAttachmentUrl(f.data, f.type, false);
+              if (!safeUrl) continue;
+              html += `<div style="padding:10px 0;border-bottom:var(--border-muted);">${senderMeta(m)}<div style="display:flex;justify-content:space-between;align-items:center;"><div style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${this._esc(f.name)}</div><a href="${this._esc(safeUrl)}" download="${this._esc(f.name)}" style="color:var(--color-text-muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;text-decoration:none;flex-shrink:0;margin-left:12px;">${this._formatSize(f.size)}</a></div></div>`;
             }
           }
         } catch(e) {}
@@ -1858,8 +1894,11 @@ const Chat = {
     try {
       const files = JSON.parse(attachData);
       for (const f of files) {
+        const isImg = !!(f.type && f.type.startsWith('image/'));
+        const safeUrl = this._safeAttachmentUrl(f.data, f.type, isImg);
+        if (!safeUrl) { Toast.show('Blocked unsafe attachment', true); continue; }
         const a = document.createElement('a');
-        a.href = f.data;
+        a.href = safeUrl;
         a.download = f.name || 'download';
         document.body.appendChild(a);
         a.click();

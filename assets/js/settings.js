@@ -165,9 +165,11 @@ const Settings = {
       const pageItems = filtered.slice(start, start + this._auditPerPage);
 
       html += pageItems.map(e => {
-        const date = Settings.formatDate(e.created_at);
-        const label = actionLabels[e.action] || e.action;
-        const detail = e.detail ? ' - ' + e.detail : '';
+        const date = Chat._esc(Settings.formatDate(e.created_at));
+        // actionLabels values are hardcoded; e.action / e.detail are server-stored and
+        // can include user-controlled bytes (usernames, free-form notes) — escape them.
+        const label = Chat._esc(actionLabels[e.action] || e.action);
+        const detail = e.detail ? ' - ' + Chat._esc(e.detail) : '';
         return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:var(--border-muted);font-size:0.8rem;">' +
           '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;">' + label + detail + '</span>' +
           '<span style="color:var(--color-text-muted);white-space:nowrap;margin-left:16px;">' + date + '</span>' +

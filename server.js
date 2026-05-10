@@ -82,6 +82,7 @@ async function initDB() {
     "CREATE TABLE IF NOT EXISTS key_history (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, chat_public_key TEXT NOT NULL, chat_private_key_enc TEXT NOT NULL, chat_private_key_iv TEXT NOT NULL, created_at TEXT NOT NULL)",
     "ALTER TABLE messages ADD COLUMN IF NOT EXISTS ttl INTEGER DEFAULT 0",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS default_ttl INTEGER DEFAULT 0",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_pin_attempt BIGINT DEFAULT 0",
   ];
   for (const m of migrations) {
     try { await pool.query(m); } catch(e) {}
@@ -120,9 +121,34 @@ function decryptTotp(stored) {
 }
 
 // ── MIDDLEWARE ──
-if (process.env.NODE_ENV === 'production') app.set('trust proxy', true);
+// Trust exactly one hop (the platform proxy, e.g. Railway). Using `true` would
+// trust arbitrary X-Forwarded-For values from any client and let attackers spoof
+// their IP to bypass the per-IP rate limiter.
+app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '10mb' }));
+
+// Type + length validators for incoming body fields. Without these, pg gets
+// arrays/objects instead of strings and throws revealing errors, and messages
+// can be near-10MB without per-field bounds.
+const isStr = (v, min, max) => typeof v === 'string' && v.length >= (min || 0) && v.length <= max;
+const safeEqualHex = (a, b) => {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+  } catch (e) { return false; }
+};
+const escapeLike = (s) => String(s).replace(/[\\%_]/g, c => '\\' + c);
+const clampTtl = (n) => {
+  const v = parseInt(n, 10);
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return Math.min(v, 30 * 24 * 60 * 60); // 30 days
+};
+// Field-size caps for E2E ciphertext fields. ciphertext_user1/2 carry encrypted
+// message TEXT (not attachments), so a few hundred KB is generous. Attachments
+// carry encrypted file bytes and need to be larger.
+const MAX_CT = 256 * 1024;          // 256 KB per ciphertext field
+const MAX_ATTACHMENT = 9 * 1024 * 1024; // 9 MB (under the 10MB body cap)
 
 // Security headers
 app.use((req, res, next) => {
@@ -137,10 +163,6 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use((req, res, next) => {
-  if (req.url.startsWith('/api/')) console.log(`${req.method} ${req.url}`);
-  next();
-});
 
 // Rate limit map (used only for login attempts)
 const apiRateLimits = new Map();
@@ -167,7 +189,8 @@ function verifyCsrf(req, res, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   if (req.path.startsWith('/auth/') || req.path.startsWith('/api/auth/')) return next();
   const token = req.headers['x-csrf-token'];
-  if (!token || token !== req.session.csrfToken) {
+  const expected = req.session && req.session.csrfToken;
+  if (typeof token !== 'string' || !expected || !safeEqualHex(token, expected)) {
     return res.status(403).json({ success: false, error: 'Invalid CSRF token' });
   }
   next();
@@ -176,6 +199,19 @@ app.use('/api/', verifyCsrf);
 
 async function auditLog(userId, action, detail) {
   await pool.query('INSERT INTO audit_log (user_id, action, detail, created_at) VALUES ($1, $2, $3, $4)', [userId, action, detail || '', new Date().toISOString()]);
+}
+// Wrap session.regenerate in a promise. Required to defeat session-fixation:
+// without regenerate(), an attacker who plants a session cookie pre-login
+// retains access after the victim authenticates.
+const regenSession = (req) => new Promise((resolve, reject) => {
+  req.session.regenerate(err => err ? reject(err) : resolve());
+});
+// Constant-cost dummy PBKDF2 used when no user matches a login. Without this,
+// the unknown-user path returns immediately while the known-user path runs
+// 100k iters of SHA-512 — a measurable user-enumeration oracle.
+const DUMMY_PBKDF_SALT = crypto.randomBytes(16).toString('hex');
+function dummyPbkdf2() {
+  crypto.pbkdf2Sync('x', DUMMY_PBKDF_SALT, 100000, 64, 'sha512');
 }
 function ok(res, data = null) { res.json({ success: true, data }); }
 function fail(res, msg, code = 400) { res.status(code).json({ success: false, error: msg }); }
@@ -223,6 +259,7 @@ app.post('/api/auth/register', async (req, res) => {
       'INSERT INTO users (id, display_name, salt, settings, unique_id, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
       [userId, 'Anonymous', salt, JSON.stringify({ confirm_delete: true }), uniqueId, new Date().toISOString()]
     );
+    await regenSession(req);
     req.session.userId = userId;
     req.session.csrfToken = crypto.randomBytes(32).toString('hex');
     await auditLog(userId, 'register', 'Account created');
@@ -258,10 +295,13 @@ app.post('/api/auth/login', async (req, res) => {
     if (blockedUntil && now < blockedUntil) {
       return fail(res, 'Too many attempts. Try again later.', 429);
     }
-    const userRes = await pool.query('SELECT id, salt, pin_hash, totp_secret, pin_failures FROM users WHERE id = $1', [userId]);
+    const userRes = await pool.query('SELECT id, salt, pin_hash, totp_secret, pin_failures, last_pin_attempt FROM users WHERE id = $1', [userId]);
     const user = userRes.rows[0];
 
     if (!user) {
+      // Burn equivalent CPU so the response time of "user exists / wrong PIN"
+      // and "user does not exist" are not distinguishable to a probe.
+      dummyPbkdf2();
       attempts.push(now);
       const blocked = attempts.length >= 5 ? now + 900 : 0;
       await pool.query(
@@ -277,19 +317,25 @@ app.post('/api/auth/login', async (req, res) => {
     const pin = (req.body.pin || '').trim();
     const totpToken = (req.body.totp_token || '').trim();
 
+    if (pin && (pin.length > 32)) return fail(res, 'PIN too long');
+    if (totpToken && totpToken.length > 12) return fail(res, 'Code too long');
+
     if ((needsPin || needsTotp) && !pin && !totpToken) {
       return ok(res, { requires_verification: true, needs_pin: needsPin, needs_totp: needsTotp });
     }
 
     if (needsPin) {
       if (!pin) return fail(res, 'PIN is required', 401);
-      // Rate limit PIN attempts: enforce 5-second delay between attempts
-      const { rows: lastFailRows } = await pool.query("SELECT created_at FROM audit_log WHERE user_id = $1 AND action = 'pin_fail' ORDER BY created_at DESC LIMIT 1", [userId]);
-      if (lastFailRows.length && (Date.now() - new Date(lastFailRows[0].created_at).getTime()) < 5000) {
+      // Throttle PIN attempts on a per-user column (no longer an audit_log query
+      // that doubled as a user-enumeration oracle). Combined with the per-IP
+      // rate limit above, this resists both targeted and untargeted brute-force.
+      const lastAttempt = parseInt(user.last_pin_attempt) || 0;
+      if (lastAttempt && (Date.now() - lastAttempt) < 5000) {
         return fail(res, 'Too fast. Wait a few seconds before trying again.', 429);
       }
+      await pool.query('UPDATE users SET last_pin_attempt = $1 WHERE id = $2', [Date.now(), userId]);
       const pinHash = crypto.pbkdf2Sync(pin, user.salt, 100000, 64, 'sha512').toString('hex');
-      if (pinHash !== user.pin_hash) {
+      if (!safeEqualHex(pinHash, user.pin_hash)) {
         const failures = (user.pin_failures || 0) + 1;
         await pool.query('UPDATE users SET pin_failures = $1 WHERE id = $2', [failures, userId]);
         await auditLog(userId, 'pin_fail', 'Attempt ' + failures);
@@ -324,6 +370,7 @@ app.post('/api/auth/login', async (req, res) => {
       await pool.query('UPDATE users SET unique_id = $1 WHERE id = $2', [autoId, userId]);
     }
 
+    await regenSession(req);
     req.session.userId = userId;
     req.session.csrfToken = crypto.randomBytes(32).toString('hex');
     await auditLog(userId, 'login', 'Login success');
@@ -451,8 +498,9 @@ app.post('/api/settings/remove-pin', requireAuth, verifyCsrf, async (req, res) =
     const pin = (req.body.pin || '').trim();
     const { rows } = await pool.query('SELECT pin_hash, salt FROM users WHERE id = $1', [uid]);
     if (rows[0] && rows[0].pin_hash) {
+      if (!isStr(pin, 1, 32)) return fail(res, 'Wrong PIN', 403);
       const pinHash = crypto.pbkdf2Sync(pin, rows[0].salt, 100000, 64, 'sha512').toString('hex');
-      if (pinHash !== rows[0].pin_hash) return fail(res, 'Wrong PIN', 403);
+      if (!safeEqualHex(pinHash, rows[0].pin_hash)) return fail(res, 'Wrong PIN', 403);
     }
     await pool.query("UPDATE users SET pin_hash = '' WHERE id = $1", [uid]);
     await auditLog(uid, 'pin_remove', 'PIN disabled');
@@ -548,9 +596,11 @@ app.post('/api/settings/regen-seed', requireAuth, verifyCsrf, async (req, res) =
       client.release();
     }
 
+    await regenSession(req);
     req.session.userId = newUserId;
+    req.session.csrfToken = crypto.randomBytes(32).toString('hex');
     await auditLog(newUserId, 'regen_seed', 'Seed phrase regenerated');
-    ok(res, { seed_phrase: newPhrase, salt: newSalt });
+    ok(res, { seed_phrase: newPhrase, salt: newSalt, csrf_token: req.session.csrfToken });
   } catch (e) { fail(res, 'Internal error', 500); }
 });
 
@@ -600,9 +650,9 @@ app.post('/api/settings/delete-account', requireAuth, verifyCsrf, async (req, re
 
     // Verify PIN if enabled
     if (user.pin_hash) {
-      if (!pin) return fail(res, 'PIN is required');
+      if (!isStr(pin, 1, 32)) return fail(res, 'PIN is required');
       const pinHash = crypto.pbkdf2Sync(pin, user.salt, 100000, 64, 'sha512').toString('hex');
-      if (pinHash !== user.pin_hash) return fail(res, 'Invalid PIN', 401);
+      if (!safeEqualHex(pinHash, user.pin_hash)) return fail(res, 'Invalid PIN', 401);
     }
 
     // Verify TOTP if enabled
@@ -653,8 +703,12 @@ app.get('/api/chat/keys/get', requireAuth, async (req, res) => {
 app.get('/api/chat/search', requireAuth, async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
-    if (!q) return ok(res, []);
-    const { rows } = await pool.query("SELECT unique_id, display_name, chat_public_key FROM users WHERE unique_id LIKE $1 AND id != $2 LIMIT 10", [q + '%', req.session.userId]);
+    // Require at least 3 chars and reject blanket-wildcard probing. Without
+    // this, q="%" returns every user (LIKE wildcards aren't escaped by
+    // parameterization — only SQL identifiers and literals are).
+    if (q.length < 3 || q.length > 30) return ok(res, []);
+    const pattern = escapeLike(q) + '%';
+    const { rows } = await pool.query("SELECT unique_id, display_name, chat_public_key FROM users WHERE unique_id LIKE $1 ESCAPE '\\' AND id != $2 LIMIT 10", [pattern, req.session.userId]);
     ok(res, rows.map(r => ({ unique_id: r.unique_id, display_name: r.display_name, has_chat: !!r.chat_public_key })));
   } catch (e) { fail(res, 'Internal error', 500); }
 });
@@ -662,10 +716,6 @@ app.get('/api/chat/search', requireAuth, async (req, res) => {
 app.get('/api/chat/conversations', requireAuth, async (req, res) => {
   try {
     const uid = req.session.userId;
-    // DEBUG: check all conversations and hidden state for this user
-    const { rows: allConvs } = await pool.query('SELECT id, user1_id, user2_id, status, initiated_by FROM conversations WHERE user1_id = $1 OR user2_id = $1', [uid]);
-    const { rows: hiddenRows } = await pool.query('SELECT conversation_id FROM hidden_conversations WHERE user_id = $1', [uid]);
-    console.log('[DEBUG] GET /conversations uid:', uid, 'all_convs:', allConvs.length, allConvs.map(c => ({ id: c.id.slice(0,8), status: c.status, initiated_by: c.initiated_by?.slice(0,8) })), 'hidden:', hiddenRows.map(h => h.conversation_id.slice(0,8)));
 
     const { rows } = await pool.query(`
       SELECT c.id, c.user1_id, c.user2_id, c.status, c.initiated_by, c.created_at, c.default_ttl,
@@ -681,7 +731,6 @@ app.get('/api/chat/conversations', requireAuth, async (req, res) => {
         AND NOT EXISTS (SELECT 1 FROM hidden_conversations hc WHERE hc.user_id = $1 AND hc.conversation_id = c.id)
       ORDER BY last_message_at DESC NULLS LAST, c.created_at DESC
     `, [uid]);
-    console.log('[DEBUG] GET /conversations filtered results:', rows.length, rows.map(r => ({ id: r.id.slice(0,8), status: r.status, is_req: r.status === 'pending' && r.initiated_by !== uid })));
     ok(res, rows.map(r => ({
       id: r.id, other_user_name: r.other_user_name, other_user_uid: r.other_user_uid,
       last_message_at: r.last_message_at || r.created_at,
@@ -699,11 +748,9 @@ app.post('/api/chat/conversations/start', requireAuth, verifyCsrf, async (req, r
   try {
     const uid = req.session.userId;
     const targetUid = (req.body.unique_id || '').trim();
-    console.log('[DEBUG] POST /start uid:', uid?.slice(0,8), 'targetUid:', targetUid);
-    if (!targetUid) return fail(res, 'Missing unique_id');
+    if (!isStr(targetUid, 1, 30)) return fail(res, 'Missing unique_id');
     const { rows: tRows } = await pool.query('SELECT id, chat_public_key FROM users WHERE unique_id = $1', [targetUid]);
     const target = tRows[0];
-    console.log('[DEBUG] POST /start target found:', !!target, target ? 'id:' + target.id.slice(0,8) : '');
     if (!target) return fail(res, 'User not found', 404);
     if (target.id === uid) return fail(res, 'Cannot chat with yourself');
 
@@ -728,10 +775,9 @@ app.post('/api/chat/conversations/start', requireAuth, verifyCsrf, async (req, r
       }
     }
 
-    console.log('[DEBUG] POST /start conv:', conv.id?.slice(0,8), 'status:', conv.status, 'u1:', u1.slice(0,8), 'u2:', u2.slice(0,8));
     const { rows: meRows } = await pool.query('SELECT chat_public_key FROM users WHERE id = $1', [uid]);
     ok(res, { conversation_id: conv.id, status: conv.status, other_public_key: target.chat_public_key || '', my_public_key: meRows[0].chat_public_key || '', user1_id: u1, user2_id: u2 });
-  } catch (e) { console.log('[DEBUG] POST /start ERROR:', e.message); fail(res, 'Internal error', 500); }
+  } catch (e) { fail(res, 'Internal error', 500); }
 });
 
 app.post('/api/chat/conversations/accept', requireAuth, verifyCsrf, async (req, res) => {
@@ -819,7 +865,11 @@ app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) =>
   try {
     const uid = req.session.userId;
     const { conversation_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, ttl } = req.body;
-    if (!conversation_id || !ciphertext_user1 || !ciphertext_user2) return fail(res, 'Missing fields');
+    if (!isStr(conversation_id, 1, 64)) return fail(res, 'Missing fields');
+    if (!isStr(ciphertext_user1, 1, MAX_CT) || !isStr(ciphertext_user2, 1, MAX_CT)) return fail(res, 'Ciphertext too large');
+    if (reply_to !== undefined && !isStr(reply_to, 0, 64)) return fail(res, 'Bad reply_to');
+    if (attachment !== undefined && !isStr(attachment, 0, MAX_ATTACHMENT)) return fail(res, 'Attachment too large');
+    const ttlClamped = clampTtl(ttl);
 
     const { rows: cRows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [conversation_id]);
     const conv = cRows[0];
@@ -830,7 +880,7 @@ app.post('/api/chat/messages/send', requireAuth, verifyCsrf, async (req, res) =>
     const id = genId();
     const created_at = new Date().toISOString();
     await pool.query('INSERT INTO messages (id, conversation_id, sender_id, ciphertext_user1, ciphertext_user2, reply_to, attachment, ttl, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-      [id, conversation_id, uid, ciphertext_user1, ciphertext_user2, reply_to || '', attachment || '', ttl || 0, created_at]);
+      [id, conversation_id, uid, ciphertext_user1, ciphertext_user2, reply_to || '', attachment || '', ttlClamped, created_at]);
     broadcastToConversation(conversation_id, uid);
     ok(res, { id, created_at });
   } catch (e) { fail(res, 'Internal error', 500); }
@@ -862,7 +912,8 @@ app.post('/api/chat/messages/edit', requireAuth, verifyCsrf, async (req, res) =>
   try {
     const uid = req.session.userId;
     const { message_id, ciphertext_user1, ciphertext_user2 } = req.body;
-    if (!message_id || !ciphertext_user1 || !ciphertext_user2) return fail(res, 'Missing fields');
+    if (!isStr(message_id, 1, 64)) return fail(res, 'Missing fields');
+    if (!isStr(ciphertext_user1, 1, MAX_CT) || !isStr(ciphertext_user2, 1, MAX_CT)) return fail(res, 'Ciphertext too large');
 
     const { rows: mRows } = await pool.query('SELECT * FROM messages WHERE id = $1', [message_id]);
     const msg = mRows[0];
@@ -1011,7 +1062,8 @@ app.post('/api/chat/attachments/upload', requireAuth, verifyCsrf, async (req, re
   try {
     const uid = req.session.userId;
     const { message_id, encrypted_data } = req.body;
-    if (!message_id || !encrypted_data) return fail(res, 'Missing fields');
+    if (!isStr(message_id, 1, 64)) return fail(res, 'Missing fields');
+    if (!isStr(encrypted_data, 1, MAX_ATTACHMENT)) return fail(res, 'Attachment too large');
     // Verify user is participant in the message's conversation
     const { rows: mRows } = await pool.query('SELECT conversation_id FROM messages WHERE id = $1', [message_id]);
     if (!mRows.length) return fail(res, 'Message not found', 404);
@@ -1068,8 +1120,8 @@ app.post('/api/chat/conversations/ttl', requireAuth, verifyCsrf, async (req, res
   try {
     const uid = req.session.userId;
     const convId = (req.body.conversation_id || '').trim();
-    const ttl = parseInt(req.body.ttl) || 0;
-    if (!convId) return fail(res, 'Missing conversation_id');
+    const ttl = clampTtl(req.body.ttl);
+    if (!isStr(convId, 1, 64)) return fail(res, 'Missing conversation_id');
     const { rows } = await pool.query('SELECT * FROM conversations WHERE id = $1', [convId]);
     const conv = rows[0];
     if (!conv || (conv.user1_id !== uid && conv.user2_id !== uid)) return fail(res, 'Not a participant', 403);
@@ -1109,7 +1161,23 @@ initDB().then(async () => {
     console.log(`EHCTA running at http://localhost:${PORT}`);
   });
 
-  const wss = new WebSocket.Server({ server });
+  // ALLOWED_ORIGINS is comma-separated. In production, set this to your real
+  // public origin (e.g. "https://app.example.com"). In dev (no env), accept
+  // anything so localhost just works.
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const wss = new WebSocket.Server({
+    server,
+    // Cap inbound frames so a peer can't burn server memory with a giant ws message.
+    maxPayload: 64 * 1024,
+    // Origin allowlist on the WS upgrade. The HTTP-level CSRF token already
+    // gates /api/ws/token, but defense in depth: don't even let cross-origin
+    // pages establish the socket.
+    verifyClient: ({ origin }, cb) => {
+      if (allowedOrigins.length === 0) return cb(true); // dev fallback
+      cb(allowedOrigins.includes(origin), 403, 'Origin not allowed');
+    },
+  });
 
   // Clean up expired WS tokens periodically
   setInterval(() => {
@@ -1177,9 +1245,22 @@ initDB().then(async () => {
           return;
         }
         if (msg.type === 'subscribe' && ws._userId && msg.conversation_id) {
-          ws._convIds.add(msg.conversation_id);
-          if (!wsClients.has(msg.conversation_id)) wsClients.set(msg.conversation_id, new Set());
-          wsClients.get(msg.conversation_id).add(ws);
+          // Verify the user is actually a participant before adding to the
+          // broadcast set. Without this any authed user can subscribe to any
+          // conversation_id and learn when activity happens (presence oracle).
+          const convId = String(msg.conversation_id).slice(0, 64);
+          (async () => {
+            try {
+              const { rows } = await pool.query(
+                'SELECT 1 FROM conversations WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)',
+                [convId, ws._userId]
+              );
+              if (rows.length === 0) return;
+              ws._convIds.add(convId);
+              if (!wsClients.has(convId)) wsClients.set(convId, new Set());
+              wsClients.get(convId).add(ws);
+            } catch (e) {}
+          })();
         }
       } catch(e) {}
     });

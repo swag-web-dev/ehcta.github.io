@@ -16,13 +16,10 @@
   },
   "dependencies": {
     "connect-pg-simple": "^9.0.1",
-    "crypto-js": "^4.2.0",
     "pg": "^8.13.1",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
     "otpauth": "^9.5.0",
-    "tweetnacl": "^1.0.3",
-    "tweetnacl-util": "^0.15.1",
     "ws": "^8.16.0"
   }
 }

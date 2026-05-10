@@ -94,12 +94,32 @@ async function initDB() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, created_at)`);
 }
 
-// Session secret from env or generate a stable one
+// In production, require all long-lived secrets to be set explicitly. Falling
+// back to a per-process random would silently invalidate every session AND
+// (because USER_ID_PEPPER and TOTP_KEY derive from SESSION_SECRET) make every
+// existing user account unreachable + every stored TOTP secret undecryptable
+// after a restart. That's a catastrophic data-loss footgun, not a recoverable
+// dev-mode convenience.
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.SESSION_SECRET) {
+    throw new Error('SESSION_SECRET env var is required in production');
+  }
+  if (!process.env.USER_ID_PEPPER) {
+    throw new Error('USER_ID_PEPPER env var is required in production');
+  }
+  if (!process.env.TOTP_ENCRYPTION_KEY) {
+    throw new Error('TOTP_ENCRYPTION_KEY env var is required in production');
+  }
+}
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const USER_ID_PEPPER = process.env.USER_ID_PEPPER || SESSION_SECRET;
 
 // ── TOTP ENCRYPTION KEY (for encrypting TOTP secrets at rest) ──
-const TOTP_KEY = process.env.TOTP_ENCRYPTION_KEY || crypto.createHash('sha256').update(SESSION_SECRET + '_totp').digest();
+// In dev, derive a stable-for-this-process key from SESSION_SECRET. In prod
+// the env var is required (see check above) so this fallback never runs.
+const TOTP_KEY = process.env.TOTP_ENCRYPTION_KEY
+  ? crypto.createHash('sha256').update(process.env.TOTP_ENCRYPTION_KEY).digest()
+  : crypto.createHash('sha256').update(SESSION_SECRET + '_totp').digest();
 
 function encryptTotp(secret) {
   const iv = crypto.randomBytes(12);
@@ -150,15 +170,48 @@ const clampTtl = (n) => {
 const MAX_CT = 256 * 1024;          // 256 KB per ciphertext field
 const MAX_ATTACHMENT = 9 * 1024 * 1024; // 9 MB (under the 10MB body cap)
 
-// Security headers
+// Force HTTPS in production. Railway / most platforms terminate TLS at a proxy
+// and forward as plain HTTP, so we look at X-Forwarded-Proto (trusted because
+// `trust proxy` is set to one hop). Without this redirect, plain-HTTP requests
+// don't get bounced and the secure-flagged session cookie won't be sent.
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && req.headers['x-forwarded-proto'] === 'http') {
+    return res.redirect(308, 'https://' + req.headers.host + req.url);
+  }
+  next();
+});
+
+// Security headers. CSP and other defenses now run in dev too — having dev
+// behave differently from prod means the scanner/QA report you get on dev
+// doesn't reflect the real shipping config.
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
+  // X-XSS-Protection is deprecated and can introduce vulnerabilities on legacy
+  // browsers — explicit 0 disables the legacy filter.
+  res.setHeader('X-XSS-Protection', '0');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()');
+  // CSP — `'unsafe-inline'` is still required because of inline event handlers
+  // baked into HTML strings throughout chat.js. Removing that requirement is a
+  // separate refactor (move every onclick="..." to addEventListener). Until
+  // then, the rest of CSP still narrows the blast radius.
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join('; '));
   if (process.env.NODE_ENV === 'production') {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss: ws:");
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   }
   next();
 });
